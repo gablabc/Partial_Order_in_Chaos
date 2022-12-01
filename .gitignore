@@ -1,7 +1,14 @@
-experiments/*
+experiments/real_data/
+experiments/Images/
 *.pdf
 *.json
 experiments/real_data/*
 experiments/real_data/__pycache__/*
 uxai/__pycache__
 tests/unittest/__pycache__
+*.png
+PO_*
+*.so
+*.o
+*.joblib
+*.txt
