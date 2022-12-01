@@ -1,0 +1,7 @@
+experiments/*
+*.pdf
+*.json
+experiments/real_data/*
+experiments/real_data/__pycache__/*
+uxai/__pycache__
+tests/unittest/__pycache__
