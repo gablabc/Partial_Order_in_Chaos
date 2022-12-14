@@ -12,3 +12,4 @@ PO_*
 *.o
 *.joblib
 *.txt
+*.npy

@@ -98,7 +98,7 @@ if __name__ == "__main__":
         plt.xlabel("m")
         plt.ylabel(r"$\epsilon$")
         plt.legend()
-        plt.savefig(os.path.join("Images", "RFs", f"RF_epsilon+_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
+        plt.savefig(os.path.join("Images", "Adult-Income", f"RF_epsilon+_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
 
 
         plt.figure()
@@ -106,4 +106,4 @@ if __name__ == "__main__":
             plt.plot(ms[1], confidences[i], label=i)
         plt.xlabel("m")
         plt.ylabel("Confidence")
-        plt.savefig(os.path.join("Images", "RFs", f"RF_confidence_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
+        plt.savefig(os.path.join("Images", "Adult-Income", f"RF_confidence_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)

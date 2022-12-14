@@ -40,9 +40,9 @@ if __name__ == "__main__":
 
     # Record the Gap Error
     gap_errors = rashomon_po.phi_mean.sum(1) - gaps
-    tmp_filename = f"GapErrors_M_{M}_seed_{args.seed}_background_{args.background_size}.joblib"
-    np.save(gap_errors, os.path.join("models", "Adult-Income", tmp_filename) )
+    tmp_filename = f"GapErrors_M_{M}_seed_{args.seed}_background_{args.background_size}"
+    np.save(os.path.join("models", "Adult-Income", tmp_filename), gap_errors)
 
     # Save the Rashomon Partial Order Object
     tmp_filename = f"TreeSHAP_M_{M}_seed_{args.seed}_background_{args.background_size}.joblib"
-    dump(rashomon_po, os.path.join("models", "Adult-Income", tmp_filename) )
+    dump(os.path.join("models", "Adult-Income", tmp_filename), rashomon_po)
