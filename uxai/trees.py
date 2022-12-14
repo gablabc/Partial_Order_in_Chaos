@@ -165,6 +165,12 @@ def custom_treeshap(model, foreground, background, features=None, ohe=None):
 
 
 
+def get_minmax_attribs(epsilon, epsilon_upper, all_phis):
+        m_idx_epsilon = np.argmax(epsilon_upper <= epsilon)
+        return all_phis[:, m_idx_epsilon, ...]
+
+
+
 def tree_attributions(model, foreground, background, epsilon_upper, features=None, ohe=None):
 
     M = len(model.estimators_)
@@ -190,9 +196,7 @@ def tree_attributions(model, foreground, background, epsilon_upper, features=Non
     all_phis = np.zeros((N, M-M_min+1, d, 2))
     for i in range(d):
         all_phis[:, :, i, :] = min_max_Hm(phis[..., i], M_min, M)
-    def get_minmax_attribs(epsilon, epsilon_upper, all_phis):
-        m_idx_epsilon = np.argmax(epsilon_upper <= epsilon)
-        return all_phis[:, m_idx_epsilon, ...]
+    
     minmax_attribs_lambda = partial(get_minmax_attribs, epsilon_upper=epsilon_upper, all_phis=all_phis)
 
 
