@@ -66,6 +66,56 @@ def get_data_bike():
 
 
 
+def get_data_compas():
+    # Process data
+    
+    df = pd.read_csv(os.path.join(os.path.dirname(__file__), 
+                    "datasets", "COMPAS", "compas-scores-two-years.csv"))
+    # Same preprocessing as done by ProPublica but we also only keep Caucasians and Blacks
+    keep = (df["days_b_screening_arrest"] <= 30) &\
+        (df["days_b_screening_arrest"] >= -30) &\
+        (df["score_text"] != "nan") &\
+        ((df["race"] == "Caucasian") | (df["race"] == "African-American")) 
+    df = df[keep]
+
+    # Binarize some features
+    df.loc[:, 'sex_Male'] = (df['sex'] == 'Male').astype(int)
+    df.loc[:, 'race_Black'] = (df['race'] == "African-American").astype(int)
+    df.loc[:, 'c_charge_degree_F'] = (df['c_charge_degree'] == 'F').astype(int)
+
+    # Features to keep
+    features = ['sex_Male', 'race_Black', 'c_charge_degree_F',
+                'priors_count', 'age', 'juv_fel_count', 'juv_misd_count']
+    names = list(df['name'])
+    X = df[features]
+    # Rename some columns
+    X = X.rename({"sex_Male" : "Sex", "race_Black" : "Race", "c_charge_degree_F" : "Charge", 
+              "priors_count" : "Priors", "age" : "Age", "juv_fel_count" : "Juv_felonies", 
+              "juv_fel_count" : "Juv_misds"})
+    X = X.to_numpy().astype(np.float64)
+    # New Features to keep
+    features = ['Sex', 'Race', 'Charge', 'Priors', 'Age', 'JuvFelonies', 'JuvMisds']
+
+    # Target
+    y = df["decile_score"].to_numpy().astype(np.float64)
+
+    # Generate Features object
+    feature_types = [
+        ["nominal", "Female", "Male"],
+        ["nominal", "White", "Black"],
+        ["nominal", "Misdemeanor", "Felony"],
+        "num_int",
+        "num_int",
+        "num_int",
+        "num_int"
+    ]
+
+    features = Features(X, features, feature_types)
+
+    return X, y, features, names
+
+
+
 def get_data_houses():
     # https://www.kaggle.com/c/house-prices-advanced-regression-techniques/data?select=train.csv
     df = pd.read_csv(
@@ -301,7 +351,8 @@ def get_data_adults():
 DATASET_MAPPING = {
     "bike": get_data_bike,
     "kaggle_houses" : get_data_houses,
-    "adult_income" : get_data_adults
+    "adult_income" : get_data_adults,
+    "compas" : get_data_compas
 }
 
 THRESHOLDS_MAPPING = {
