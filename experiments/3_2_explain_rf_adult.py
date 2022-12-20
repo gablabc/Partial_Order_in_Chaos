@@ -1,6 +1,7 @@
+""" Explain Random Forests with Interventional-Partition-TreeSHAP """
+
 import numpy as np
 from joblib import load, dump
-import matplotlib.pyplot as plt
 from simple_parsing import ArgumentParser
 
 # Local imports
@@ -26,13 +27,14 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test = custom_train_test_split(X, y, task)
     M = 1000
 
+    # Get the RF for the given train seed
     model = load(os.path.join("models", "Adult-Income", f"RF_M_{M}_seed_{args.seed}.joblib"))
 
     # The upper bound on preformance
     tree_preds = all_tree_preds(X_test, model, task="classification")
     m, epsilon_upper = epsilon_upper_bound(tree_preds, y_test.reshape((-1, 1)), task="classification")
 
-    # Shap feature attribution
+    # SHAP feature attribution
     foreground = X_test[:2000]
     background = X_train[:args.background_size]
     gaps = model.predict_proba(foreground)[:, 1] - model.predict_proba(X_train)[:, 1].mean()

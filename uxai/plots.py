@@ -220,26 +220,19 @@ def bar(phis, feature_labels, threshold=None, xerr=None, absolute=False, ax=None
     colors['pos'] = np.array(colors['pos'])/255.
     colors['neg'] = np.array(colors['neg'])/255.
     
-    if xerr is None:
-        ax.barh(
-            y_pos, bar_mapper(phis[ordered_features]),
-            bar_width, align='center',
-            color=[colors['neg'] if phis[ordered_features[j]] <= 0 
-                   else colors['pos'] for j in range(len(y_pos))], 
-            edgecolor=(1,1,1,0.8), capsize=5
-        )
-    else:
+    if xerr is not None:
         if xerr.ndim == 2 and xerr.shape[0] == 2:
             xerr = xerr[:, ordered_features]
         else:
             xerr = xerr[ordered_features]
-        ax.barh(
-            y_pos, bar_mapper(phis[ordered_features]),
-            bar_width, xerr=xerr, align='center',
-            color=[colors['neg'] if phis[ordered_features[j]] <= 0 
-                   else colors['pos'] for j in range(len(y_pos))], 
-            edgecolor=(1,1,1,0.8), capsize=5
-        )
+    # Plot the bars with errr
+    ax.barh(
+        y_pos, bar_mapper(phis[ordered_features]),
+        bar_width, xerr=xerr, align='center',
+        color=[colors['neg'] if phis[ordered_features[j]] <= 0 
+                else colors['pos'] for j in range(len(y_pos))], 
+        edgecolor=(1,1,1,0.8), capsize=5
+    )
 
     yticklabels = [feature_labels[j] for j in ordered_features]
     ax.set_yticks(ticks=list(y_pos))
@@ -259,7 +252,7 @@ def bar(phis, feature_labels, threshold=None, xerr=None, absolute=False, ax=None
         ax.set_xlim(xmin, xmax + (xmax-xmin)*0.05)
     
     plt.gcf().tight_layout()
-        
+    
 
 
 def plot_hasse_diagram(phi_mean, adjaency, ranks, top_ranks, node_labels, 

@@ -1,4 +1,5 @@
 # %%
+""" Interactive code to analyse results of RFs on Adult-Income """
 import numpy as np
 import pandas as pd
 from joblib import load
@@ -37,6 +38,7 @@ for seed in range(5):
         gap_errors.append(np.column_stack((gap_error_load, seed * np.ones(2000), B * np.ones(2000))))
 df = pd.DataFrame(np.vstack(gap_errors), columns=["Gap Errors", "Run", "Background Size"])
 
+
 # %%
 
 hue_order = list(range(5))
@@ -45,7 +47,6 @@ sns.boxplot(x="Background Size", y="Gap Errors", hue="Run", data=df, width=0.6,
 plt.legend('', frameon=False)
 plt.savefig(os.path.join("Images", "Adult-Income", f"RF_B_samples_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
 # plt.show()
-
 
 
 # %%
@@ -84,6 +85,7 @@ plt.ylim(0.135, 0.22)
 plt.ylabel(r"Test Error Bound $\epsilon^+$")
 plt.savefig(os.path.join("Images", "Adult-Income", f"RF_utility_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
 # plt.show()
+
 
 # %%
 # Select epsilon star and best seed
@@ -126,7 +128,7 @@ descriptions = ["A confident prediction of y=1 with no Capital Gain/Loss",
                 "Random", "Random", "Random", "Random", "Random", "Random"]
 
 best_m = m[best_m_idx]
-cherry_picked_min = np.partition(tree_preds, kth=m[best_m_idx])[:, :best_m]
+cherry_picked_min =  np.partition( tree_preds, kth=best_m)[:, :best_m]
 cherry_picked_max = -np.partition(-tree_preds, kth=best_m)[:, :best_m]
 min_pred = cherry_picked_min.mean(1)
 max_pred = cherry_picked_max.mean(1)
@@ -156,14 +158,14 @@ for i, idx in enumerate(idxs):
         dot.render(filename=os.path.join('Images', 'Adult-Income', "PO", f"PO_instance_{idx}"), format='pdf')
 
         # Bar plot
-        widths = (extreme_attribs[idx, :, 1] - extreme_attribs[idx, :, 0])/2
-        bar(PO.phi_mean, x_map, xerr=widths.T)
+        widths = np.vstack((PO.phi_mean - extreme_attribs[idx, :, 0], 
+                            extreme_attribs[idx, :, 1] - PO.phi_mean))
+        bar(PO.phi_mean, x_map, xerr=widths)
         plt.savefig(os.path.join('Images', 'Adult-Income', "PO", f"Attrib_instance_{idx}.pdf"), bbox_inches='tight')
 
     else:
         print("Gaps is not well-defined")
 
     print("\n")
-
 
 # %%

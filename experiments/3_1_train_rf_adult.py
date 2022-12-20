@@ -1,3 +1,5 @@
+""" Train Random Forest Classifiers on Adult-Income """
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import RandomizedSearchCV
 import numpy as np
@@ -58,21 +60,24 @@ if __name__ == "__main__":
     cv_search = RandomizedSearchCV(model, hp_grid, scoring="accuracy",
                                     cv=cross_validator, n_iter=n_repetitions,
                                     verbose=2, random_state=42).fit(X_train, y_train.ravel())
+    # Find the best Hyper-Parameters
     best_hp = cv_search.best_params_
     print(best_hp)
 
+    # Increase the size of the Tree Set
     for M in [10, 100, 1000]:
         model = RandomForestClassifier(**best_hp)
 
         ms = []
         epsilons_upper = []
         confidences = []
+        # Repeat training 5 times for variability considerations
         for seed in range(5):
             print(f"M : {M} \nseed : {seed}\n")
             model.set_params(random_state=int(seed), n_estimators=M)
             model.fit(X_train, y_train.ravel())
 
-            # Pickle the model
+            # Save the model
             dump(model, os.path.join("models", "Adult-Income", f"RF_M_{M}_seed_{seed}.joblib"))
 
             # Get the predictions of all trees on the test set
