@@ -17,54 +17,6 @@ from uxai.features import Features
 
 data_dir = "../../datasets/"
 
-def get_data_bike():
-    df = pd.read_csv(
-        os.path.join(os.path.dirname(__file__), "datasets", "Bike-Sharing/hour.csv")
-    )
-    df.drop(columns=["dteday", "casual", "registered", "instant"], inplace=True)
-
-    # Remove correlated features
-    df.drop(columns=["atemp", "season"], inplace=True)
-
-    # Rescale temp to Celcius
-    df["temp"] = 41 * df["temp"]
-
-    # Month count starts at 0
-    df["mnth"] -= 1
-
-    # Shuffle the dataset
-    df = df.sample(frac=1, random_state=42)
-
-    # Scale all features
-    feature_names = list(df.columns[:-1])
-
-    X = df.to_numpy()[:, :-1]
-    y = df.to_numpy()[:, [-1]]
-
-    # Generate Features object
-    feature_types = [
-        ["ordinal", "2011", "2012"],
-        ["ordinal",
-            "January", "February", "March", "April", "May", "June", "July",
-            "August", "September", "October","November", "December",
-        ],
-        "num_int",
-        "bool",
-        ["ordinal",
-         "Sunday", "Monday", "Thuesday", "Wednesday", "Thursday",
-         "Friday", "Saturday"],
-        "bool",
-        "num_int",
-        "num",
-        "num",
-        "num",
-    ]
-
-    features = Features(X, feature_names, feature_types)
-
-    return X, y, features
-
-
 
 def get_data_compas():
     # Process data
@@ -349,21 +301,14 @@ def get_data_adults():
 # Mappings for the different datasets to customize the code
 
 DATASET_MAPPING = {
-    "bike": get_data_bike,
     "kaggle_houses" : get_data_houses,
     "adult_income" : get_data_adults,
     "compas" : get_data_compas
 }
 
-THRESHOLDS_MAPPING = {
-    "kaggle_houses": 0.95*28090,   # Random Forest 28090  (22500 also possible)
-    "bike": 0.95*46.3,             # Random Forest 46.3
-    "adult_income": 100-0.95*15.11 # Logistic Regression 15.11 error -> 84.89 accuracy
-}
-
 
 TASK_MAPPING = {
     "kaggle_houses": "regression",
-    "bike": "regression",
-    "adult_income": "classification"
+    "adult_income": "classification",
+    "compas" : "regression"
 }
