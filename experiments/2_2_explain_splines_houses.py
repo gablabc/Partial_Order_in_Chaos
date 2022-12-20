@@ -1,3 +1,5 @@
+""" Compute the Feature Attributions for Spline models """
+
 import numpy as np
 import matplotlib.pyplot as plt
 from joblib import load
@@ -56,6 +58,7 @@ if __name__ == "__main__":
         epsilon_space = model[1].get_epsilon(tolerances)
         utilities.append(rashomon_po.get_utility(epsilon_space))
 
+        # Degree 2 was selected for further investigations
         if degree == 2:
             tolerance_star = RMSEs[-1] + 202
 
@@ -128,12 +131,14 @@ if __name__ == "__main__":
     plt.show()
 
 
-    # # Where to save figures
-    # save_path = os.path.join("Images", "Explain", "kaggle_houses", "global", "Splines")
-    # # Make folder to save local explaination images
-    # if not os.path.exists(save_path):
-    #     os.makedirs(save_path)
-    
+# Un-used code for global feature importance
+
+# # Where to save figures
+# save_path = os.path.join("Images", "Explain", "kaggle_houses", "global", "Splines")
+# # Make folder to save local explaination images
+# if not os.path.exists(save_path):
+#     os.makedirs(save_path)
+
 # print(f"### Global ###")
 # # Reorder feature names
 # feature_names = [features.names[i] for i in non_complex_feature_idx] +\

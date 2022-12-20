@@ -26,10 +26,10 @@ print(f"RMSE : {RMSE}")
 print(f"Maxmimum tolerable RMSE : {RMSE + 0.05}")
 epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
 
-# Sample points in the Rashomon set
-z = np.random.normal(0, 1, size=(40000, 3)) / np.sqrt(chi2.ppf(0.5, df=3))
-z = z[np.linalg.norm(z, axis=1) <= 1]
-w_inside = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
+# Sample points in the Rashomon set Boundary
+z = np.random.normal(0, 1, size=(40000, 3))
+z = z / np.linalg.norm(z, axis=1, keepdims=True)
+w_boundary = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
 
 
 # Is the prediction method working?
@@ -42,7 +42,7 @@ assert linear_rashomon.get_RMSE(X, y) == RMSE
 
 
 # Ensure that all models have RMSE bellow epsilon
-all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * X_tilde.dot(w_inside.T) - linear_rashomon.y_mean) ** 2, axis=0))
+all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * X_tilde.dot(w_boundary.T) - linear_rashomon.y_mean) ** 2, axis=0))
 print(np.min(all_RMSE), np.max(all_RMSE))
 
 
@@ -50,7 +50,7 @@ print(np.min(all_RMSE), np.max(all_RMSE))
 plt.figure()
 scale = linear_rashomon.y_std / linear_rashomon.X_std
 linear_rashomon.plot_rashomon_set(0, 1, epsilon)
-plt.scatter(scale[0] * w_inside[::4, 1], scale[1] * w_inside[::4, 2], c="r", marker="x")
+plt.scatter(scale[0] * w_boundary[::4, 1], scale[1] * w_boundary[::4, 2], c="r", marker="x")
 plt.xlabel(r"$w_1$")
 plt.ylabel(r"$w_2$")
 
@@ -72,7 +72,7 @@ print(linear_rashomon.min_max_coeffs(epsilon))
 
 # plt.figure()
 # # Plot the FI and compare with sampling
-# bp = plt.boxplot(w_inside[:, 1:] * y.std(), patch_artist=True)
+# bp = plt.boxplot(w_boundary[:, 1:] * y.std(), patch_artist=True)
 
 # for patch in bp['boxes']:
 #     patch.set_facecolor('#9999FF')
@@ -89,7 +89,7 @@ print(linear_rashomon.min_max_coeffs(epsilon))
 # Plot the LFA and compare with sampling
 
 plt.figure()
-bp = plt.boxplot(w_inside[:, 1:] * y.std() / X.std(0) * (X[0] - np.mean(X, 0)), patch_artist=True)
+bp = plt.boxplot(w_boundary[:, 1:] * y.std() / X.std(0) * (X[0] - np.mean(X, 0)), patch_artist=True)
 
 for patch in bp['boxes']:
     patch.set_facecolor('#9999FF')

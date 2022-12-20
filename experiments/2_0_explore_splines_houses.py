@@ -1,3 +1,5 @@
+""" Visualize the Splines """
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -32,6 +34,7 @@ def all_scatter_plots(X, y, features):
         plt.ylabel("Target")
         plt.savefig(os.path.join("Images", "Kaggle-Houses", f"scatter_y_{i}.png"), bbox_inches='tight')
     plt.close('all')
+
 
 
 def plot_spline_basis(X, y, encoder, dim, degree, simple_feature_idx, complex_feature_idx, features):
@@ -70,8 +73,8 @@ if __name__ == "__main__":
 
     all_scatter_plots(X, y, features)
     scores = main_effect_score(X, y)
-    for i, feature in enumerate(features.names):
-        print(f"{feature} : {scores[i]:.3f}")
+    for i in np.argsort(scores)[::-1]:
+        print(f"{features.names[i]} : {scores[i]:.3f}")
 
     
     # Spline preprocessing on these features with high R^2
@@ -90,3 +93,4 @@ if __name__ == "__main__":
                     [features.names[i] for i in complex_feature_idx]
 
     plot_spline_basis(X, y, encoder, dim, degree, simple_feature_idx, complex_feature_idx, features)
+    plt.show()

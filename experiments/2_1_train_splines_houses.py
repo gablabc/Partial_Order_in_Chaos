@@ -1,3 +1,5 @@
+""" Train Degree 1, 2, and 3 Splines on the Kaggle Housing dataset """
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm

@@ -26,20 +26,21 @@ print(f"Maxmimum tolerable RMSE : {RMSE + 0.05}")
 epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
 
 
-# Sample points in the Rashomon set
-z = np.random.normal(0, 1, size=(20000, 1+H.shape[1])) / np.sqrt(chi2.ppf(0.5, df=1+H.shape[1]))
-z = z[np.linalg.norm(z, axis=1) <= 1]
-w_inside = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
-print(w_inside.shape)
+# Sample points on the boundary of the Rashomon set
+z = np.random.normal(0, 1, size=(20000, 1+H.shape[1]))
+z = z / np.linalg.norm(z, axis=1, keepdims=True)
+w_boundary = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
+print(w_boundary.shape)
 
 H_ = (H - linear_rashomon.X_mean) / linear_rashomon.X_std
 H_tilde = np.column_stack( (np.ones(len(H_)), H_) )
 
 # Ensure that all models have RMSE bellow epsilon
-all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * H_tilde.dot(w_inside.T) - linear_rashomon.y_mean) ** 2, axis=0))
+all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * H_tilde.dot(w_boundary.T) - linear_rashomon.y_mean) ** 2, axis=0))
 print(np.min(all_RMSE), np.max(all_RMSE))
 
 
+# Compute Predictions for Partial Dependence
 line = np.linspace(-1, 1, 100)
 xx, yy = np.meshgrid(line, line)
 hh = splt.transform(np.column_stack( (xx.ravel(), yy.ravel()) ))
@@ -76,18 +77,18 @@ for d in [0, 1]:
 
     i = np.array(idxs)+1
     sorted_idx = np.argsort(X[:, d])
-    coord_preds = linear_rashomon.y_std * H_tilde[:, i].dot(w_inside[:10, i].T) + linear_rashomon.y_mean
+    coord_preds = linear_rashomon.y_std * H_tilde[:, i].dot(w_boundary[:20, i].T) + linear_rashomon.y_mean
     plt.plot(X[sorted_idx, d], coord_preds[sorted_idx], 'r')
 
 
 
 # ## Global Feature Importance ##
 # plt.figure()
-# importances = np.zeros((w_inside.shape[0], 2))
+# importances = np.zeros((w_boundary.shape[0], 2))
 # for d in [0, 1]:
 #     idxs = features_subset[d]
 #     i = np.array(idxs)+1
-#     coord_attrib = linear_rashomon.y_std * H_tilde[:, i].dot(w_inside[:, i].T) 
+#     coord_attrib = linear_rashomon.y_std * H_tilde[:, i].dot(w_boundary[:, i].T) 
 #     importances[:, d] = np.std(coord_attrib, axis=0)
 # # Plot the FI and compare with sampling
 # bp = plt.boxplot(importances, patch_artist=True)
@@ -105,7 +106,8 @@ for d in [0, 1]:
 
 
 
-## Local Feature Attributions ##
+#### Local Feature Attributions ####
+
 # Plot the LFA and compare with sampling
 x = np.array([[-0.75, 0]])
 h = splt.transform(x)
@@ -113,8 +115,8 @@ f_x = float(linear_rashomon.predict(splt.transform(x)))
 E_f = float(linear_rashomon.predict(H).mean(0))
 print(f"Prediction Gap is : {f_x - E_f:2f}")
 
-print(w_inside[:, idxs].shape)
-per_coord_attrib = w_inside[:, 1:] * y.std() * (h - np.mean(H, 0)) / H.std(0)
+print(w_boundary[:, idxs].shape)
+per_coord_attrib = w_boundary[:, 1:] * y.std() * (h - np.mean(H, 0)) / H.std(0)
 print(per_coord_attrib.shape)
 attribs = []
 for d in range(2):
@@ -129,6 +131,7 @@ extreme_attribs = rashomon_po.minmax_attrib(epsilon)[0]
 plt.plot(range(1, 3), extreme_attribs[:, 0], 'r')
 plt.plot(range(1, 3), extreme_attribs[:, 1], 'r')
 
+# Partial Order of Local Feature Attribution
 local_po = rashomon_po.get_poset(0, epsilon, ["x1", "x2"])
 dot = local_po.print_hasse_diagram()
 dot.render(filename=os.path.join('Images', 'PO_Lobal_Spline'), format='png')
