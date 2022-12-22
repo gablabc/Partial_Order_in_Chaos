@@ -5,6 +5,8 @@ from scipy import linalg
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.metrics import mean_squared_error
+from warnings import warn
+
 from .utils_optim import opt_lin_ellipsoid
 from .partial_orders import RashomonPartialOrders
 
@@ -13,7 +15,7 @@ def solve_cholesky(K, y, lambd):
     # w = inv(K + lambd*R*I) * y
     R = K.shape[0]
     A = K + lambd * R * np.eye(R)
-    return linalg.solve(A, y, sym_pos=True, overwrite_a=False), K.dot(A/R)+1e-4*np.eye(R)
+    return linalg.solve(A, y, sym_pos=True, overwrite_a=False), K.dot(A/R)
 
 
 def grad_rbf(X, Dict, K, gamma):
@@ -110,8 +112,10 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         return K + eps
 
 
-    def fit(self, X, y):
+    def fit(self, X, y, fit_rashomon=False):
         self.N, self.n_features = X.shape
+        self.fit_rashomon = False
+
         # Use training data as the dictionnary
         self.Dict = X
         self.R = self.N
@@ -134,11 +138,32 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         self.train_loss = self.MSE + self.lambd * self.h_norm()
         self.RMSE = np.sqrt(self.MSE)
         
-        # Define Rashomon Set
-        self.A = A
-        self.A_half = np.linalg.cholesky(self.A)
-        self.A_half_inv = np.linalg.inv(self.A_half)
-        self.A_inv = self.A_half_inv.T.dot(self.A_half_inv)
+        # Add Rashomon-Related parameters, this is not necessary when 
+        # Fine-tuning the hyperparameters.
+        if fit_rashomon:
+            # Define Rashomon Set
+            self.A = A
+            regul_noise = 1e-10
+            noise_added = False
+            # Due to numerical error, it is possible, but rare, that the
+            # Ellipsoid matrix is not positive definite. In that case,
+            # increasingly add regularizing noise which means that we
+            # slightly underestimate the Rashomon Set
+            while True:
+                try:
+                    self.A_half = np.linalg.cholesky(self.A)
+                    break
+                except:
+                    noise_added = True
+                    self.A = A + regul_noise * np.eye(self.R)
+                    regul_noise *= 10
+
+            if noise_added:
+                warn("Rashomon Set is underestimated tn ensure numerical stability")
+
+            self.A_half = np.linalg.cholesky(self.A)
+            self.A_half_inv = np.linalg.inv(self.A_half)
+            self.A_inv = self.A_half_inv.T.dot(self.A_half_inv)
 
         return self
 

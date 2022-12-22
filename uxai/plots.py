@@ -187,7 +187,13 @@ def pcp(phis, feature_labels, total_attrib=None, test_error=None, xerr=None,
 
 def bar(phis, feature_labels, threshold=None, xerr=None, absolute=False, ax=None):
 
-    num_features = len(feature_labels)
+    # Are there multiple feature labels?
+    if type(feature_labels[0]) == list:
+        num_features = len(feature_labels[0])
+        multiple_labels = True
+    else:
+        num_features = len(feature_labels)
+        multiple_labels = False
 
     if absolute:
         bar_mapper = lambda x : np.abs(x)
@@ -234,9 +240,21 @@ def bar(phis, feature_labels, threshold=None, xerr=None, absolute=False, ax=None
         edgecolor=(1,1,1,0.8), capsize=5
     )
 
-    yticklabels = [feature_labels[j] for j in ordered_features]
-    ax.set_yticks(ticks=list(y_pos))
-    ax.set_yticklabels(yticklabels, fontsize=15)
+    # Set the y-ticks and labels
+    if multiple_labels:
+        yticklabels = [feature_labels[0][j] for j in ordered_features]
+        ax.set_yticks(ticks=list(y_pos))
+        ax.set_yticklabels(yticklabels, fontsize=15)
+
+        yticklabels = [feature_labels[1][j] for j in ordered_features]
+        ax2 = ax.twinx()
+        ax2.set_yticks(ticks=list(y_pos))
+        ax2.set_yticklabels(yticklabels, fontsize=15)
+        ax2.set_ybound(*ax.get_ybound())
+    else:
+        yticklabels = [feature_labels[j] for j in ordered_features]
+        ax.set_yticks(ticks=list(y_pos))
+        ax.set_yticklabels(yticklabels, fontsize=15)
 
 
     # put horizontal lines for each feature row

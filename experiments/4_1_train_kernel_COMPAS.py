@@ -1,3 +1,5 @@
+""" Train Kernel Ridge Regression to predict 1-10 COMPAS scores """
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
@@ -41,10 +43,10 @@ if __name__ == "__main__":
     # Fit a RF as a reference
     cv_rf_score = -1 * cross_val_score(RandomForestRegressor(),
                                         X_train, y_train,
-                                        scoring="neg_mean_squared_error", cv=kfold)
+                                        scoring="neg_root_mean_squared_error", cv=kfold)
     print("#### Random Forest ####")
-    print(f"FR CV MSE {cv_rf_score.mean():.2f}")
-    print(f"Target Variance {y.var():.2f}\n")
+    print(f"FR CV RMSE {cv_rf_score.mean():.2f}")
+    print(f"Target Std {y.std():.2f}\n")
 
 
     print("#### Kernel Ridge ####")
@@ -59,7 +61,7 @@ if __name__ == "__main__":
     search = GridSearchCV(
         base_estimator,
         cv=kfold,
-        scoring='neg_mean_squared_error',
+        scoring='neg_root_mean_squared_error',
         param_grid={"lambd": np.logspace(-6, -1, args.n_steps),
                     "gamma": np.logspace(-5, 5, args.n_steps)},
         verbose=2,
@@ -68,23 +70,26 @@ if __name__ == "__main__":
     kr = search.best_estimator_
     res = search.cv_results_
 
+    # Train fit the Rashomon Parameter
+    kr.fit(X_train, y_train, fit_rashomon=True)
+
     # Plot the results of hyper-parameter optimization
     plt.figure()
 
     jitter = np.random.uniform(0.8, 1.2, size=(args.n_steps**2,))
     plt.scatter(res['param_lambd']*jitter, -res['mean_test_score'], alpha=0.5)
-    plt.scatter(kr.get_params()['lambd'], -search.best_score_, c='r')
+    plt.plot(kr.get_params()['lambd'], -search.best_score_, 'r*', markersize=15, markeredgecolor='k')
     plt.plot([7.5e-6, 0.3], cv_rf_score.mean() * np.ones(2), 'k--')
-    plt.plot([7.5e-6, 0.3], y_train.var() * np.ones(2), 'k--')
+    plt.plot([7.5e-6, 0.3], y_train.std() * np.ones(2), 'k--')
     plt.xlim(7.5e-6, 0.3)
     plt.xlabel(r"Regularization $\lambda$")
-    plt.ylabel("Cross-Validated MSE")
+    plt.ylabel("Cross-Validated RMSE")
     plt.xscale('log')
     plt.savefig(os.path.join("Images", "COMPAS", f"performance_{args.kernel}.pdf"), bbox_inches='tight')
 
     # Test perf
-    print(f"Ridge Test MSE {mean_squared_error(kr.predict(X_test), y_test):.2f}")
-    print(y_test.var())
+    print(f"Ridge Test RMSE {mean_squared_error(kr.predict(X_test), y_test, squared=False):.2f}")
+    print(f"Target Test Std {y_test.std():.2f}")
 
     # Pickle the model
     from joblib import dump

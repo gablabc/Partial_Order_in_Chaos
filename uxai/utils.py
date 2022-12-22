@@ -74,28 +74,6 @@ def as_sklearn(models, batch_size, embeddings=None, scaler=None):
 
 
 
-class EmbedderDataLoader:
-    """ 
-    A custom DataLoader that loads num (float) and cat (int) 
-    feature separately, embeds categorical features, and concatenates them.
-    """
-    def __init__(self, dataset, embeddings, **kwargs):
-        self.data_loader = DataLoader(dataset, **kwargs)
-        self.dataset = dataset
-        self.embeddings = embeddings
-
-    def embedding_iterator(self):
-        for x_num, x_cat, y in self.data_loader:
-            embedded_instances = []
-            for i, embedding in enumerate(self.embeddings):
-                embedded_instances.append(embedding[x_cat[:, i], :])
-            yield torch.cat([x_num] + embedded_instances, dim=1), y
-
-    def __iter__(self):
-        return self.embedding_iterator()
-
-
-
 def get_data_loader(X, y, features, batch_size, embeddings=None, shuffle=False):
     """ Return Pytorch dataloaders """
     
