@@ -59,31 +59,31 @@ plt.ylabel(r"$w_2$")
 print(linear_rashomon.min_max_coeffs(epsilon))
 
 
-# line = np.linspace(-3, 3, 100)
-# # Show PDP
-# for idx in [0, 1]:
+line = np.linspace(-3, 3, 100)
+# Show PDP
+for idx in [0, 1]:
 
-#     pdp = linear_rashomon.partial_dependence(line, idx=idx, epsilon=epsilon)
-#     plt.figure()
-#     plt.fill_between(line, pdp[:, 0], pdp[:, 1], alpha=0.5)
-#     plt.xlabel(f"$w{idx}$")
-#     plt.ylabel("Partial Dependence")
-
-
-# plt.figure()
-# # Plot the FI and compare with sampling
-# bp = plt.boxplot(w_boundary[:, 1:] * y.std(), patch_artist=True)
-
-# for patch in bp['boxes']:
-#     patch.set_facecolor('#9999FF')
-
-# extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"])
-# plt.plot(range(1, 3), extreme_imp[:, 0], 'r')
-# plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
+    pdp = linear_rashomon.partial_dependence(line, idx=idx, epsilon=epsilon)
+    plt.figure()
+    plt.fill_between(line, pdp[:, 0], pdp[:, 1], alpha=0.5)
+    plt.xlabel(f"$w{idx}$")
+    plt.ylabel("Partial Dependence")
 
 
-# dot = global_po.print_hasse_diagram()
-# dot.render(filename=os.path.join('PO_Global_Linear'), format='png')
+plt.figure()
+# Plot the GFI and compare with sampling
+bp = plt.boxplot(w_boundary[:, 1:] * y.std(), patch_artist=True)
+
+for patch in bp['boxes']:
+    patch.set_facecolor('#9999FF')
+
+extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"])
+plt.plot(range(1, 3), extreme_imp[:, 0], 'r')
+plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
+
+
+dot = global_po.print_hasse_diagram()
+dot.render(filename=os.path.join('PO_Global_Linear'), format='png')
 
 
 # Plot the LFA and compare with sampling

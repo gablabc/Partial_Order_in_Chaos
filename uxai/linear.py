@@ -38,6 +38,24 @@ def shur_complement(A, idx):
     return A_shur
 
 
+def abs_interval(interval):
+    """
+    Map an interval trough the abs function
+            \      /
+             \    /
+              \  /
+               \/
+            [----]
+    """
+    # The interval does not cross the origin
+    if interval[0] * interval[1] > 0:
+        interval = np.abs(interval)
+        return np.array([np.min(interval), np.max(interval)])
+    # The interval crosses the origin:
+    else:
+        return np.array([0, np.max(np.abs(interval))])
+
+
 
 class LinearRashomon(object):
 
@@ -162,7 +180,8 @@ class LinearRashomon(object):
             for i, grouped_idx in enumerate(idxs):
                 # For features with one component
                 if len(grouped_idx) == 1:
-                    min_max_importance[i] = uni_min_max_importance[i]
+                    # The importance is the norm of the weights
+                    min_max_importance[i] = abs_interval(uni_min_max_importance[i])
                 # For features with two or more component
                 else:
                     grouped_idx = np.array(grouped_idx)+1
@@ -177,21 +196,23 @@ class LinearRashomon(object):
                     min_val, _, max_val, _ = opt_qpqc(B_prime, z_s)
                     min_max_importance[i, 0] = self.y_std * np.sqrt(min_val)
                     min_max_importance[i, 1] = self.y_std * np.sqrt(max_val)
-            
+        
 
-        # Coeffs with small importance for all models are negligible
-        negligible = set()
+        # If there exists model that dont rely on this feature, we do not
+        # plot it in the PO. We only plot features that are "necessary"
+        # for good performance
+        ambiguous = set()
         for i in range(min_max_importance.shape[0]):
-            if min_max_importance[i, 0] > -threshold and min_max_importance[i, 1] <  threshold:
-                negligible.add(i)
-        print(negligible)
+            if min_max_importance[i, 0] < threshold:
+                ambiguous.add(i)
+        print(ambiguous)
         
         # For linear models : incomparable features occur when a specific plane crosse the ellipsoid
         if idxs is None:
             A_half_inv = self.A_half_inv * np.sqrt(epsilon)
 
             # Compare features by features to make partial order
-            select_features_idx = [i for i in range(self.n_features) if i not in negligible]
+            select_features_idx = [i for i in range(self.n_features) if i not in ambiguous]
             adjacency = np.zeros((self.n_features, self.n_features))
             for i in select_features_idx:
                 for j in select_features_idx:
@@ -215,7 +236,7 @@ class LinearRashomon(object):
         # General additive models : relative feature importance requires solving a QPQC
         else:
             # Compare features by features to make partial order
-            select_features_idx = [i for i in range(len(idxs)) if i not in negligible]
+            select_features_idx = [i for i in range(len(idxs)) if i not in ambiguous]
             adjacency = np.zeros((len(idxs), len(idxs)))
             for i in select_features_idx:
                 for j in select_features_idx:
@@ -257,9 +278,10 @@ class LinearRashomon(object):
                                 else:
                                     adjacency[j, i] = 1
                     
-        po = PartialOrder(w_hat_importance, adjacency, negligible=negligible,
-                        ambiguous=set(), features_names=feature_names, top_bottom=top_bottom)
+        po = PartialOrder(w_hat_importance, adjacency, ambiguous=ambiguous, 
+                            features_names=feature_names, top_bottom=top_bottom)
         return min_max_importance, po
+
 
 
     def attributions(self, x_instances, idxs=None, threshold=0, top_bottom=True):

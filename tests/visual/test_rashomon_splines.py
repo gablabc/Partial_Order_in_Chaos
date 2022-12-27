@@ -82,27 +82,27 @@ for d in [0, 1]:
 
 
 
-# ## Global Feature Importance ##
-# plt.figure()
-# importances = np.zeros((w_boundary.shape[0], 2))
-# for d in [0, 1]:
-#     idxs = features_subset[d]
-#     i = np.array(idxs)+1
-#     coord_attrib = linear_rashomon.y_std * H_tilde[:, i].dot(w_boundary[:, i].T) 
-#     importances[:, d] = np.std(coord_attrib, axis=0)
-# # Plot the FI and compare with sampling
-# bp = plt.boxplot(importances, patch_artist=True)
+## Global Feature Importance ##
+plt.figure()
+importances = np.zeros((w_boundary.shape[0], 2))
+for d in [0, 1]:
+    idxs = features_subset[d]
+    i = np.array(idxs)+1
+    coord_attrib = linear_rashomon.y_std * H_tilde[:, i].dot(w_boundary[:, i].T) 
+    importances[:, d] = np.std(coord_attrib, axis=0)
+# Plot the FI and compare with sampling
+bp = plt.boxplot(importances, patch_artist=True)
 
-# for patch in bp['boxes']:
-#     patch.set_facecolor('#9999FF')
+for patch in bp['boxes']:
+    patch.set_facecolor('#9999FF')
 
-# extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"], idxs=features_subset)
-# plt.plot(range(1, 3), extreme_imp[:, 0], 'r')
-# plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
+extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"], idxs=features_subset)
+plt.plot(range(1, 3), extreme_imp[:, 0], 'r')
+plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
 
 
-# dot = global_po.print_hasse_diagram()
-# dot.render(filename=os.path.join('PO_Global_Splines'), format='png')
+dot = global_po.print_hasse_diagram()
+dot.render(filename=os.path.join('Images', 'PO_Global_Splines'), format='png')
 
 
 
