@@ -77,7 +77,7 @@ def test_qpqc_values_standard(d):
             out += X.dot(b)
             return out
 
-        min_val, max_val = opt_qpqc_standard_exact(A, b, C, x_hat)
+        min_val, _, max_val, _ = opt_qpqc_standard_exact(A, b, C, x_hat)
 
         # Sample points from the unit sphere
         z = np.random.normal(0, 1, size=(10000, d)) / np.sqrt(chi2.ppf(0.5, df=d))
