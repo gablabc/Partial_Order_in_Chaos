@@ -6,9 +6,10 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.metrics import mean_squared_error
 from warnings import warn
+from scipy.linalg import eigh
 
-from .utils_optim import opt_lin_ellipsoid
-from .partial_orders import RashomonPartialOrders
+from .utils_optim import opt_lin_ellipsoid, opt_qpqc_standard_exact, opt_qpqc_standard_approx
+from .partial_orders import PartialOrder, RashomonPartialOrders
 
 
 def solve_cholesky(K, y, lambd):
@@ -312,3 +313,183 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
                                    neg_eps, pos_eps, adjacency_eps, top_bottom)
         return PO
 
+
+
+    def get_K_switch(self, X, y, idxs, samples_per_chunk=2):
+        """ 
+        For general model classes, returns an augmented "Switched" dataset, 
+        containing the synthetic instances employed to approximate e_switch.
+
+        Parameters
+        ----------
+        X: (N, d) array
+            The input features.
+        y: (N, 1) array
+            The target values.
+        idxs: List(List(int))
+            Partition of features into groups
+        samples_per_chunk: int
+            Split the data in chunks of `samples_per_chunk` and compute all permutations
+            on these chunks. Setting `samples_per_chunk=N` will result in all `N(N-1)`
+            permutations.
+
+        Returns
+        -------
+        X_switch: List((N', d) array)
+            List of X_switch for each group of feature.
+        y_switch: (N', 1) array
+            Vector of switched target values.
+
+        """
+        N, d = X.shape
+
+        if samples_per_chunk <= 1:
+            raise Exception('If samples_per_chunk=1, then no permuted values are created.')
+        if samples_per_chunk % 1 != 0 or samples_per_chunk>N:
+            raise Exception('samples_per_chunk must be an integer <= N.')
+
+        # Generate a list of combinations of instances
+        combn_inds = [] # Index for permuting data.
+        n_chunks = int(N / samples_per_chunk)
+        starts = samples_per_chunk * np.arange(n_chunks+1) # Beginning of each chunk
+        for j in range(n_chunks):
+            # Store all combinations within the chunk
+            chunk_inds = np.arange(starts[j], starts[j+1])
+            p1_idx, p2_idx = np.meshgrid(chunk_inds, chunk_inds)
+            combn_inds += [np.column_stack((p1_idx.ravel(), p2_idx.ravel()))]
+        combn_inds = np.vstack(combn_inds).astype(int)
+        is_perm = combn_inds[:, 0] != combn_inds[:, 1]
+        combn_inds = combn_inds[is_perm]
+        full_n = combn_inds.shape[0]
+
+        # Evaluate the Kernel on the switched dataset
+        K_switch = []
+        for grouped_idx in idxs:
+            not_grouped_idx = [i for i in range(d) if not i in grouped_idx]
+            X_switch = np.zeros( (full_n, d) )
+            X_switch[:, grouped_idx] = X[combn_inds[:, [0]], grouped_idx]
+            X_switch[:, not_grouped_idx] = X[combn_inds[:, [1]], not_grouped_idx]
+            K_switch.append(self.get_kernel(X_switch, self.Dict))
+
+        y_switch = y[combn_inds[:, 1]]
+
+        return K_switch, y_switch
+
+
+
+
+    def feature_importance(self, X, y, epsilon, feature_names, idxs=None, 
+                                threshold=0, top_bottom=True, samples_per_chunk=10):
+        
+        N = X.shape[0]
+        if idxs is None:
+            idxs = [[i] for i in range(self.n_features)]
+        
+        # Shift the features
+        K = self.get_kernel(X, self.Dict)
+        K_switch, y_switch = self.get_K_switch(X, y, idxs, samples_per_chunk=samples_per_chunk)
+        n_perms = len(y_switch)
+
+        # Compute Feature Importance
+        alpha_s_importance = np.zeros(len(idxs))
+        min_max_importance = np.zeros((len(idxs), 2))
+        ytK = y.T.dot(K)
+        KtK = K.T.dot(K)
+        C = self.A / epsilon
+
+        # Reduce the dimensionality of the Rashomon Set since it can be flat
+        # in some directions
+        W, V = eigh(C)
+        keep_dims = np.where(np.abs(W) > 1e-7)[0].reshape((1, -1))
+        n_dims = keep_dims.size
+        print("Rashomon Set of dim :", n_dims)
+        # Express C in its truncated eigen space
+        C = np.zeros((n_dims, n_dims))
+        np.fill_diagonal(C, W[keep_dims])
+
+        for i in range(len(idxs)):
+            # Compute quadratic form
+            A = K_switch[i].T.dot(K_switch[i]) / n_perms - KtK / N
+            b = -2 * (y_switch.T.dot(K_switch[i]) / n_perms - ytK / N)
+
+            # Model Reliance of the regularized least square
+            alpha_s_importance[i] = self.alpha_s.T.dot(A.dot(self.alpha_s)) + b.dot(self.alpha_s)
+
+            # Reduce dimensionality of Objective function
+            A, b, alpha_s = reduce_dim(A, b, self.alpha_s, keep_dims, W, V)
+
+            # # Solve QPQC to get MCR- and MCR+
+            try:
+                min_val, _, max_val, _ = opt_qpqc_standard_exact(A, b.T, C, alpha_s)
+            except:
+                # If A is singular, we must resort to using an approximate method
+                min_val, max_val= opt_qpqc_standard_approx(A, b.T, C, alpha_s)
+            min_max_importance[i] = [min_val, max_val]
+        
+        
+        # If there exists model that dont rely on this feature, we do not
+        # plot it in the PO. We only plot features that are "necessary"
+        # for good performance
+        ambiguous = set()
+        for i in range(min_max_importance.shape[0]):
+            if min_max_importance[i, 0] < threshold:
+                ambiguous.add(i)
+        # print(ambiguous)
+        
+        # Compare features by features to make partial order
+        select_features_idx = [i for i in range(len(idxs)) if i not in ambiguous]
+        adjacency = np.zeros((len(idxs), len(idxs)))
+        for i in select_features_idx:
+            for j in select_features_idx:
+                if i < j:
+                    # Sometimes the adjacency only requires compare the min/max
+                    # importance of each individual feature
+                    if min_max_importance[i, 1] < min_max_importance[j, 0]:
+                        adjacency[i, j] = 1
+                    elif min_max_importance[j, 1] < min_max_importance[i, 0]:
+                        adjacency[j, i] = 1
+                    # In the more general case, we must solve a QPQC  max I_i - I_j
+                    elif np.sign(min_max_importance[i, 0] - min_max_importance[j, 0]) ==\
+                         np.sign(min_max_importance[i, 1] - min_max_importance[j, 1]):
+                        
+                        # Compute quadratic form
+                        A = K_switch[i].T.dot(K_switch[i]) / n_perms
+                        A -= K_switch[j].T.dot(K_switch[j]) / n_perms
+                        b = -2 * y_switch.T.dot(K_switch[i]) / n_perms
+                        b += 2 * y_switch.T.dot(K_switch[j]) / n_perms
+
+                        # Solve linear objective instead
+                        if np.isclose(0, A).all():
+                            min_max_val = opt_lin_ellipsoid(b.T, self.A_half_inv, self.alpha_s, return_input_sol=False)
+                            min_val = min_max_val[0, 0]
+                            max_val = min_max_val[0, 1]
+                        # Solve QPQC
+                        else:
+                            # Reduce dimensionality of Objective function
+                            A, b, alpha_s = reduce_dim(A, b, self.alpha_s, keep_dims, W, V)
+                            # Solve QPQC to get MCR- and MCR+
+                            try:
+                                min_val, _, max_val, _ = opt_qpqc_standard_exact(A, b.T, C, alpha_s)
+                            except:
+                                # If A is singular, we must resort to using an approximate method
+                                min_val, max_val = opt_qpqc_standard_approx(A, b.T, C, alpha_s)
+                        
+                        if np.sign(min_val) == np.sign(max_val):
+                            # Features are comparable
+                            if max_val < 0:
+                                adjacency[i, j] = 1
+                            else:
+                                adjacency[j, i] = 1
+                    
+        po = PartialOrder(alpha_s_importance, adjacency, ambiguous=ambiguous, 
+                            features_names=feature_names, top_bottom=top_bottom)
+        return min_max_importance, po
+
+
+
+def reduce_dim(A, b, alpha_s, keep_dims, W, V):
+    # Reduce dimensionality
+    A = V.T.dot(A.dot(V))[keep_dims.T, keep_dims]
+    b = b.dot(V)[:, keep_dims.ravel()]
+    alpha_s = V.T.dot(alpha_s)[keep_dims.ravel()]
+    return A, b, alpha_s

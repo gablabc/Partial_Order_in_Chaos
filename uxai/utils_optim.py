@@ -2,6 +2,8 @@
 
 import numpy as np
 from scipy.optimize import bisect
+from scipy.linalg import eigh
+import trustregion
 
 
 
@@ -31,48 +33,51 @@ def opt_lin_ellipsoid(a, A_half_inv, x_hat, return_input_sol=False):
 
 
 
-def qpqc(W, x_hat):
+def qpqc(W, alpha_hat):
     """ Routine for qpqc """
-    if (x_hat == 0).any():
+    if (alpha_hat == 0).any():
         raise ValueError("The QPQC is degenerate")
     
-    norm_x_hat = np.linalg.norm(x_hat)
-    bound = np.sqrt(np.ceil(norm_x_hat) ** 2)
+    norm_alpha_hat = np.linalg.norm(alpha_hat)
 
     # Scenario 1 (Trivial)
-    if norm_x_hat <= 1 and (W>0).all():
+    if norm_alpha_hat <= 1 and (W>0).all():
         # Min is trivial
-        argmin = x_hat
+        argmin = alpha_hat
     # Scenario 2 (Non-Trivial)
     else:
+        # Function representing the norm of alpha
         def f(lambd):
-            return np.linalg.norm(W / (W + lambd) * x_hat.ravel()) ** 2 - 1
+            return np.linalg.norm(W / (W + lambd) * alpha_hat.ravel()) ** 2 - 1
 
         # No discontinuities in f       
         if (W>0).all():
             start = 0
-            end = (bound - 1) * np.max(W)
+            end = (norm_alpha_hat - 1) * np.max(W)
         # Discontunities associated with dims with w_i < 0
         else:
             w_max = np.max(np.abs(W))
-            # Go at the highest discontunity with alpha_hat_i not null
-            idx = np.where(~np.isclose(x_hat, 0))[0]
-            w_start = np.min(W[idx])
-            alpha_start = x_hat[idx[np.argmin(W[idx])], 0]
-            start = -w_start * (alpha_start / np.sqrt(2) + 1)
+            w_start = -np.min(W)
+            alpha_start = alpha_hat[np.argmin(W)]
+            start = w_start * (alpha_start / np.sqrt(2) + 1)
             assert f(start) > 1
-            end = (bound + 1) * w_max
+            end = (norm_alpha_hat + 1) * w_max
         
         # Bisect search for lambda
-        lambd_star = bisect(f, start, end, maxiter=200)
-        argmin = (W / (W + lambd_star)).reshape((-1, 1)) * x_hat
-
+        lambd_star, res = bisect(f, start, end, maxiter=500, full_output=True)
+        # Make sure bissection has converged
+        assert res.converged
+        argmin = (W / (W + lambd_star)).reshape((-1, 1)) * alpha_hat
+        # Make sure we are on the border when necessary
+        assert np.isclose(np.linalg.norm(argmin), 1)
+    
     return argmin
 
 
 def opt_qpqc(A, x_hat):
     """ 
-    Compute the min/argmin and max/argmax of g(x) = (x - x_hat)^T A (x - x_hat) with the
+    Compute the min/argmin and max/argmax of 
+    g(x) = (x - x_hat)^T A (x - x_hat) with the
     constraint that x^T x <= 1
 
     Parameters
@@ -86,8 +91,8 @@ def opt_qpqc(A, x_hat):
         argmax: (d, 1) array
     """
     # Eigen decomposition of quadratic form
-    W, V = np.linalg.eig(A)
-    assert not (W ==0).any(), "Matrix must be non-singular"
+    W, V = eigh(A)
+    assert np.abs(W).min() > 1e-11, "Matrix must be non-singular"
     
     # Change of basis for x_hat
     alpha_hat = V.T.dot(x_hat)
@@ -101,3 +106,87 @@ def opt_qpqc(A, x_hat):
     max_val = float( (argmax - x_hat).T.dot(A.dot(argmax - x_hat)) )
 
     return min_val, argmin, max_val, argmax
+
+
+
+def opt_qpqc_standard_exact(A, b, C, x_hat):
+    """ 
+    Compute the min/argmin and max/argmax of 
+    `g(x) = x^T A x + b^T x`
+    subject to `(x-x_hat)^T C (x-h_hat) <= 1`
+
+    Parameters
+    ----------
+    A: (d, d) non-singular symmetric matrix
+    b: (d, 1) vector
+    C: (d, d) positive definite matrix
+    x_hat: (d, 1) array
+
+    Returns
+    -------
+    min_val: float
+    argmin: (d, 1) array
+    max_val: float
+    argmax: (d, 1) array
+    """
+    
+    C_half = np.linalg.cholesky(C)
+    C_half_inv = np.linalg.inv(C_half)
+    # Complete the square of the objective
+    if (b!=0).any():
+        x_prime = -0.5 * np.linalg.solve(A, b)
+        gap = -x_prime.T.dot(A.dot(x_prime))
+        z_hat = C_half.T.dot(x_prime - x_hat)
+    else:
+        gap = 0
+        z_hat = -1 * C_half.T.dot(x_hat)
+    A_prime = C_half_inv.dot(A.dot(C_half_inv.T))
+    
+    # Run the QPQC in "trust region subproblem" form
+    min_val, argmin, max_val, argmax = opt_qpqc(A_prime, z_hat)
+    min_val += gap
+    max_val += gap
+    # Inverse transform
+    argmin = C_half_inv.T.dot(argmin) + x_hat
+    argmax = C_half_inv.T.dot(argmax) + x_hat
+
+    return float(min_val), argmin, float(max_val), argmax
+
+
+def opt_qpqc_standard_approx(A, b, C, x_hat):
+    """ 
+    Compute the min/argmin and max/argmax of 
+    `g(x) = x^T A x + b^T x`
+    subject to `(x-x_hat)^T C (x-h_hat) <= 1`
+
+    Parameters
+    ----------
+    A: (d, d) symmetric matrix, can be singular
+    b: (d, 1) vector
+    C: (d, d) positive definite matrix
+    x_hat: (d, 1) array
+
+    Returns
+    -------
+    min_val: float
+    argmin: (d, 1) array
+    max_val: float
+    argmax: (d, 1) array
+    """
+
+    C_half = np.linalg.cholesky(C)
+    C_half_inv = np.linalg.inv(C_half)
+    # Complete the square of the objective
+    A_prime = C_half_inv.dot(A.dot(C_half_inv.T))
+    b_prime = C_half_inv.dot(b + 2 * A.dot(x_hat))
+    gap = float(x_hat.T.dot(A.dot(x_hat)) + b.T.dot(x_hat))
+    # Run the QPQC in "trust region subproblem" form
+    argmin = trustregion.solve(b_prime.ravel(), 2*A_prime, 1)
+    min_val = 0.5 * argmin.T.dot(A_prime.dot(argmin)) + b_prime.T.dot(argmin)
+    argmax = trustregion.solve(-b_prime.ravel(), -2*A_prime, 1)
+    max_val = 0.5 * argmax.T.dot(A_prime.dot(argmax)) + b_prime.T.dot(argmax)
+    # Add the gap
+    min_val += gap
+    max_val += gap
+
+    return float(min_val), float(max_val)

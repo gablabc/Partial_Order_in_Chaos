@@ -2,12 +2,10 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import chi2
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-from .partial_orders import PartialOrder
 from .utils_optim import opt_lin_ellipsoid, opt_qpqc
-from .partial_orders import RashomonPartialOrders
+from .partial_orders import PartialOrder, RashomonPartialOrders
 
 
 def get_ellipse_border(A_half_inv, x_hat):
