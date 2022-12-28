@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from joblib import load
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 from IPython import display
 
 from utils import setup_pyplot_font
@@ -36,11 +37,30 @@ image_path = os.path.join("Images", "COMPAS")
 
 # Assess Performance
 print(f"Train loss = {model.MSE:.4f} + {model.lambd} {model.h_norm():.4f} = {model.train_loss:.4f}")
-rel_epsilon = 0.02
+rel_epsilon = 0.015
 upper_bound_loss = (1 + rel_epsilon) * model.train_loss
 print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.4f}")
 # Get the absolute epsilon
 abs_epsilon = model.get_epsilon(rel_epsilon)
+
+# %%
+
+## Global Feature Importance ##
+# Split train/test
+_, X_test, _, y_test = train_test_split(X, y, test_size=0.2, 
+                                            shuffle=True, random_state=0)
+min_max_importance, global_PO = model.feature_importance(X_test, y_test.reshape((-1, 1)), 
+                                    abs_epsilon, feature_names=features.names, idxs=None, threshold=-100)
+
+# %%
+# Bar chart
+width = np.abs(min_max_importance - global_PO.phi_mean.reshape((-1, 1)))
+bar(global_PO.phi_mean, features.names, xerr=width.T)
+plt.savefig(os.path.join(image_path, "PO", f"Global_Imp_{kernel}.pdf"), bbox_inches='tight')
+
+# Hasse Diagram
+dot = global_PO.print_hasse_diagram(show_ambiguous=False)
+dot.render(filename=os.path.join(image_path, "PO", f"PO_Global_{kernel}"), format='pdf')
 
 # %%
 def local_feature_attribution(name_x, name_z):
@@ -119,7 +139,7 @@ def local_feature_attribution(name_x, name_z):
 # # Gregory Lugo vs Mallory Williams
 # rashomon_po = rashomon_po = local_feature_attribution('gregory lugo', 'mallory williams')
 
-# %%
+# # %%
 # James Rivelli vs Robert Cannon
 rashomon_po = local_feature_attribution('robert cannon', 'james rivelli')
 

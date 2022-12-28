@@ -1,12 +1,9 @@
 # %%
 
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 from matplotlib import rc
 rc('font',**{'family':'serif', 'serif':['Computer Modern Roman'], 'size':11})
 rc('text', usetex=True)
-from matplotlib import rcParams
-rcParams['text.latex.preamble']=r"\usepackage{bm}\usepackage{amsfonts}"
 
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -15,6 +12,7 @@ import math, os, sys
 sys.path.append(os.path.join('../..'))
 
 from uxai.kernels import KernelRashomon
+from uxai.plots import bar
 
 # %% Setup
 
@@ -41,20 +39,24 @@ plt.ylabel(r"$x_2$")
 cbar = plt.colorbar(train_plot)
 cbar.ax.set_ylabel(r"Target $y$", labelpad=-40, y=1.05, rotation=0)
 plt.axis('equal')
-plt.show()
+# plt.show()
 
 # %%
 
-train_size = 500
-# kr = GridSearchCV(
-#     KernelRashomon(kernel="rbf", gamma=0.1),
-#     param_grid={"lambd": np.logspace(-3, 2, 10), "gamma": np.logspace(-3, 1, 10)},
+train_size = 300
 kr = GridSearchCV(
-    KernelRashomon(kernel="poly", gamma=0.1, degree=3),
+    KernelRashomon(kernel="rbf", gamma=0.1),
     param_grid={"lambd": np.logspace(-3, 2, 10), "gamma": np.logspace(-3, 1, 10)},
 )
+# kr = GridSearchCV(
+#     KernelRashomon(kernel="poly", gamma=0.1, degree=3),
+#     param_grid={"lambd": np.logspace(-3, 2, 10), "gamma": np.logspace(-3, 1, 10)},
+# )
 kr.fit(X[:train_size], y[:train_size])
 kr = kr.best_estimator_
+
+# Refit with Rashomon Parameters
+kr.fit(X[:train_size], y[:train_size], fit_rashomon=True)
 
 # %% Utility functions
 
@@ -85,16 +87,30 @@ def plot_value_var(models, uncertainty=True, n_points=300):
 
 plot_value_var(kr)
 plot_value_var(kr, uncertainty=False)
-plt.show()
+# plt.show()
 
 # %%
-from scipy.stats import chi2
 # Sample points in the Rashomon set
 rel_epsilon = 0.1
 abs_epsilon = kr.get_epsilon(rel_epsilon)
-z = np.random.normal(0, 1, size=(100000, kr.R)) / np.sqrt(chi2.ppf(0.5, df=kr.R))
-z = z[np.linalg.norm(z, axis=1) <= 1]
-alpha_inside = z.dot(kr.A_half_inv).T + kr.alpha_s
+z = np.random.normal(0, 1, size=(10000, kr.R))
+z = z / np.linalg.norm(z, axis=1, keepdims=True)
+alpha_bound = z.dot(kr.A_half_inv).T * np.sqrt(abs_epsilon) + kr.alpha_s
+
+# %%
+
+## Global Feature Importance ##
+min_max_importance, global_PO = kr.feature_importance(X, y, abs_epsilon, 
+                                            feature_names=["x1", "x2"], idxs=None)
+print(min_max_importance)
+
+# Bar chart
+width = np.abs(min_max_importance - global_PO.phi_mean.reshape((-1, 1)))
+bar(global_PO.phi_mean, ["x1", "x2"], xerr=width.T)
+plt.show()
+
+dot = global_PO.print_hasse_diagram()
+dot.render(filename=os.path.join('Images', 'PO_Global_Kernel'), format='png')
 
 # %%
 XX, YY = np.meshgrid(np.linspace(-2, 2, 10), 
@@ -107,8 +123,8 @@ grad_ = kr.gradients(XX_)
 plt.figure(figsize = (10, 10))
 
 for i in range(XX_.shape[0]):
-    for j in np.random.choice(alpha_inside.shape[1], size=(20)):
-        alpha = alpha_inside[:, [j]].T
+    for j in np.random.choice(alpha_bound.shape[1], size=(20)):
+        alpha = alpha_bound[:, [j]].T
         grad = np.sum(grad_[i,...]*alpha, axis=1)
         # normalize gradient
         norm = np.sqrt(grad[0] ** 2 + grad[1] ** 2) * 2
@@ -144,14 +160,14 @@ rashomon_po = kr.attributions(X_explain, z)
 
 # %%
 extreme_attribs = rashomon_po.minmax_attrib(abs_epsilon)
-ensemble_attribs = np.sum(kr.IG[...,np.newaxis] * alpha_inside.reshape((1, 1, kr.R, -1)), axis=2)
+ensemble_attribs = np.sum(kr.IG[...,np.newaxis] * alpha_bound.reshape((1, 1, kr.R, -1)), axis=2)
 
 # %%
 for i in range(5):
     print(f"#### {i} ####")
     plt.figure()
     extreme_attrib = extreme_attribs[i]
-    plt.plot(range(1, 3), ensemble_attribs[i, :, ::10000], 'b')
+    plt.plot(range(1, 3), ensemble_attribs[i, :, ::100], 'b')
     plt.plot(range(1, 3), extreme_attrib[:, 0], 'r')
     plt.plot(range(1, 3), extreme_attrib[:, 1], 'r')
     plt.plot(range(1, 3), [0, 0], 'k')
@@ -162,9 +178,9 @@ for i in range(5):
         display.display_svg(dot)
     else:
         print("No defined gap")
-# dot.render(filename=os.path.join('Images', 'PO_Lobal_Spline'), format='png')
+dot.render(filename=os.path.join('Images', 'PO_Lobal_Spline'), format='png')
 
-# plt.show()
+plt.show()
 
 
 # %%

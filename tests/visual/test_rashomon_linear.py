@@ -83,7 +83,7 @@ plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
 
 
 dot = global_po.print_hasse_diagram()
-dot.render(filename=os.path.join('PO_Global_Linear'), format='png')
+dot.render(filename=os.path.join('Images', 'PO_Global_Linear'), format='png')
 
 
 # Plot the LFA and compare with sampling
