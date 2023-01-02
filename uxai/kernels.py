@@ -377,7 +377,6 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
 
 
 
-
     def feature_importance(self, X, y, epsilon, feature_names, idxs=None, 
                                 threshold=0, top_bottom=True, samples_per_chunk=10):
         
@@ -401,29 +400,35 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         # in some directions
         W, V = eigh(C)
         keep_dims = np.where(np.abs(W) > 1e-7)[0].reshape((1, -1))
-        n_dims = keep_dims.size
-        print("Rashomon Set of dim :", n_dims)
+        print("Rashomon Set of dim :", keep_dims.size)
         # Express C in its truncated eigen space
-        C = np.zeros((n_dims, n_dims))
-        np.fill_diagonal(C, W[keep_dims])
+        C_half_inv = np.diag(np.sqrt(1/W[keep_dims.ravel()]))
 
         for i in range(len(idxs)):
             # Compute quadratic form
             A = K_switch[i].T.dot(K_switch[i]) / n_perms - KtK / N
-            b = -2 * (y_switch.T.dot(K_switch[i]) / n_perms - ytK / N)
-
-            # Model Reliance of the regularized least square
-            alpha_s_importance[i] = self.alpha_s.T.dot(A.dot(self.alpha_s)) + b.dot(self.alpha_s)
+            b = -2 * (y_switch.T.dot(K_switch[i]) / n_perms - ytK / N).T
 
             # Reduce dimensionality of Objective function
-            A, b, alpha_s = reduce_dim(A, b, self.alpha_s, keep_dims, W, V)
+            A, b, alpha_s = reduce_dim(A, b, self.alpha_s, keep_dims, V)
 
-            # # Solve QPQC to get MCR- and MCR+
+            # Model Reliance of the regularized least square
+            alpha_s_importance[i] = alpha_s.T.dot(A.dot(alpha_s)) + b.T.dot(alpha_s)
+
+            # Transform ellipsoid into unit circle
+            A_prime = C_half_inv.dot(A.dot(C_half_inv))
+            b_prime = C_half_inv.dot(b + 2 * A.dot(alpha_s))
+
+            # Solve QPQC to get MCR- and MCR+
             try:
-                min_val, _, max_val, _ = opt_qpqc_standard_exact(A, b.T, C, alpha_s)
+                min_val, _, max_val, _ = opt_qpqc_standard_exact(A_prime, b_prime)
+                # print("Solved exactly")
             except:
-                # If A is singular, we must resort to using an approximate method
-                min_val, max_val= opt_qpqc_standard_approx(A, b.T, C, alpha_s)
+                # If we have issues, fall back to an approximate method
+                min_val, max_val= opt_qpqc_standard_approx(A_prime, b_prime)
+                # print("Solved approximatelly")
+            min_val += alpha_s_importance[i]
+            max_val += alpha_s_importance[i]
             min_max_importance[i] = [min_val, max_val]
         
         
@@ -457,22 +462,33 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
                         A -= K_switch[j].T.dot(K_switch[j]) / n_perms
                         b = -2 * y_switch.T.dot(K_switch[i]) / n_perms
                         b += 2 * y_switch.T.dot(K_switch[j]) / n_perms
+                        b = b.T
 
                         # Solve linear objective instead
                         if np.isclose(0, A).all():
-                            min_max_val = opt_lin_ellipsoid(b.T, self.A_half_inv, self.alpha_s, return_input_sol=False)
+                            min_max_val = opt_lin_ellipsoid(b, self.A_half_inv, self.alpha_s, return_input_sol=False)
                             min_val = min_max_val[0, 0]
                             max_val = min_max_val[0, 1]
                         # Solve QPQC
                         else:
                             # Reduce dimensionality of Objective function
-                            A, b, alpha_s = reduce_dim(A, b, self.alpha_s, keep_dims, W, V)
+                            A, b, alpha_s = reduce_dim(A, b, self.alpha_s, keep_dims, V)
+
+                            # Transform ellipsoid into unit circle
+                            gap = float(alpha_s.T.dot(A.dot(alpha_s)) + b.T.dot(alpha_s))
+                            A_prime = C_half_inv.dot(A.dot(C_half_inv.T))
+                            b_prime = C_half_inv.dot(b + 2 * A.dot(alpha_s))
+
                             # Solve QPQC to get MCR- and MCR+
                             try:
-                                min_val, _, max_val, _ = opt_qpqc_standard_exact(A, b.T, C, alpha_s)
+                                min_val, _, max_val, _ = opt_qpqc_standard_exact(A_prime, b_prime)
+                                # print("Solved exactly")
                             except:
                                 # If A is singular, we must resort to using an approximate method
-                                min_val, max_val = opt_qpqc_standard_approx(A, b.T, C, alpha_s)
+                                min_val, max_val = opt_qpqc_standard_approx(A_prime, b_prime)
+                                # print("Solved approximatelly")
+                            min_val += gap
+                            max_val += gap
                         
                         if np.sign(min_val) == np.sign(max_val):
                             # Features are comparable
@@ -487,9 +503,9 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
 
 
 
-def reduce_dim(A, b, alpha_s, keep_dims, W, V):
+def reduce_dim(A, b, alpha_s, keep_dims, V):
     # Reduce dimensionality
     A = V.T.dot(A.dot(V))[keep_dims.T, keep_dims]
-    b = b.dot(V)[:, keep_dims.ravel()]
+    b = V.T.dot(b)[keep_dims.ravel()]
     alpha_s = V.T.dot(alpha_s)[keep_dims.ravel()]
     return A, b, alpha_s

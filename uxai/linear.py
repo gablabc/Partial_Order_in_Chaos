@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-from .utils_optim import opt_lin_ellipsoid, opt_qpqc
+from .utils_optim import opt_lin_ellipsoid, opt_qpqc_centered_exact
 from .partial_orders import PartialOrder, RashomonPartialOrders
 
 
@@ -191,7 +191,7 @@ class LinearRashomon(object):
                     B = 1 / N * self.X_tilde[:, grouped_idx].T.dot(self.X_tilde[:, grouped_idx])
                     B_prime = A_half_inv.dot(B.dot(A_half_inv.T))
                     z_s = -1 * A_half.T.dot(self.w_hat[grouped_idx])
-                    min_val, _, max_val, _ = opt_qpqc(B_prime, z_s)
+                    min_val, _, max_val, _ = opt_qpqc_centered_exact(B_prime, z_s)
                     min_max_importance[i, 0] = self.y_std * np.sqrt(min_val)
                     min_max_importance[i, 1] = self.y_std * np.sqrt(max_val)
         
@@ -267,7 +267,7 @@ class LinearRashomon(object):
                             z_s = -1 * A_half.T.dot(self.w_hat[grouped_idx])
 
                             # Solve the non-convex QPQC
-                            min_val, _, max_val, _ = opt_qpqc(B_prime, z_s)
+                            min_val, _, max_val, _ = opt_qpqc_centered_exact(B_prime, z_s)
                             
                             if np.sign(min_val) == np.sign(max_val):
                                 # Features are comparable

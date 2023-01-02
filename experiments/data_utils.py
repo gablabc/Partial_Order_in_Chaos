@@ -55,7 +55,7 @@ def get_data_compas():
     feature_types = [
         ["nominal", "Female", "Male"],
         ["nominal", "White", "Black"],
-        ["nominal", "Misdemeanor", "Felony"],
+        ["nominal", "Misd", "Felony"],
         "num_int",
         "num_int",
         "num_int",
