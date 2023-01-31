@@ -9,7 +9,21 @@ from .partial_orders import PartialOrder, RashomonPartialOrders
 
 
 def get_ellipse_border(A_half_inv, x_hat):
-    """ Plot the border of ellipse (x - x_hat)^T A (x - x_hat) <= 1 ? """
+    """ 
+    Plot the border of ellipse (x - x_hat)^T A (x - x_hat) <= 1 
+    
+    Parameters
+    ----------
+    A_half_inv: (2, 2) `np.array`
+        The inverse of the Cholesky decomposition of A
+    x_hat: (2, 1) `np.array`
+        Center of the ellipsoid
+
+    Returns
+    -------
+    zz: (2, N) `np.array`
+        N points on the border of the ellipsoid
+    """
     theta = np.linspace(0, 2 * np.pi, 100)
     zz = np.vstack([np.cos(theta), np.sin(theta)])
     zz = A_half_inv.T.dot(zz) + x_hat
