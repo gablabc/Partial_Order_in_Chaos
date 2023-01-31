@@ -100,10 +100,21 @@ class Search_Config:
 
 def SchulzLeik(phis):
     """
-    Compute Mean ranks and Ordinal Consensus as in Schulz et al (https://arxiv.org/abs/2111.09121)
+    Compute Mean ranks and Ordinal Consensus as 
+    in Schulz et al (https://arxiv.org/abs/2111.09121)
 
     Oridinal consensus computation is adapted from:
     https://rdrr.io/rforge/agrmt/src/R/Leik.R
+
+    Parameters
+    ----------
+        phis: (n, d) `np.array`
+            feature attributions for the n models
+
+    Returns
+    -------
+        mean_rank: (d,) `np.array`
+        ordinal_consensus: (d,) `np.array`
     """
     # Number of models
     n = phis.shape[0]
@@ -111,14 +122,13 @@ def SchulzLeik(phis):
     m = phis.shape[1]
     order = np.argsort(phis, axis=-1)
     rank  = np.argsort(order, axis=-1)
-    print(rank)
     rank_where = [np.where(rank==r, 1, 0) for r in range(m)]
     frequencies = np.transpose(np.sum(np.stack(rank_where), axis=1))
     # Percentages
     P = frequencies / n
     # Cumulative frequency distribution
     R = np.cumsum(P, axis=1)
-    SDi = np.where(R<=0.5, R, 1-R)
+    SDi = np.where(R <= 0.5, R, 1-R)
     maxSDi = 0.5 * (m - 1)
     D = np.sum(SDi, axis=1) / maxSDi
     return np.mean(rank, axis=0), 1 - D

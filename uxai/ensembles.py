@@ -317,7 +317,25 @@ class Ensemble(nn.Module):
 
 def evaluate_ensemble(models, data_loader, return_predictions=False):
     """ 
-    Evaluate each model of the ensemble on train and test sets
+    Evaluate each MLP of the ensemble on multiple datasets
+    
+    Parameters
+    ----------
+        models: `uxai.ensembles.Ensemble`
+            fitted models to evaluate
+        data_loaders: (m,) `List(torch.DataLoader)`
+            Various dataloader to compute the performance on
+        return_predictions: `bool`, default=False
+            Whether or not to return the predictions on the 
+            provided data
+
+    Returns
+    -------
+        errors: (n_models+1, m) `torch.tensor`
+            For each model, and the average model, return the empirical error
+        pred_list: (m,) `List(torch.tensor)`
+            Predictions of all models on all m datasets. Only returns if
+            `return_predictions=True`.
     """
     size_ensemble = 0 if models.hparams.aggregate else models.hparams.size_ensemble
     if type(data_loader) == list:

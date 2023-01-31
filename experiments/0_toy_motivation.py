@@ -1,3 +1,8 @@
+"""
+Script for the toy example shown in Section 3.
+We fit 5 MLPs with ReLU activations on a simple
+4D problem and compare the SHAP feature attributions
+"""
 # %%
 import matplotlib.pyplot as plt
 from matplotlib import rc
@@ -8,13 +13,9 @@ import numpy as np
 import pandas as pd
 import random
 from simple_parsing import ArgumentParser
-from utils import SchulzLeik
 
 import os, sys
 sys.path.append(os.path.join(".."))
-
-from uxai.ensembles import Ensemble, evaluate_ensemble
-from uxai.methods import method_reduce_lr
 
 # Parse arguments
 parser = ArgumentParser()
@@ -35,24 +36,23 @@ cov = 1 * torch.eye(4)
 cov[0, 1] = rho
 cov[1, 0] = rho
 
-limit = False
-
-center = torch.zeros(4)#2*torch.ones(3)
+center = torch.zeros(4)
 m = MultivariateNormal(center, cov)
 
 M = 1000
-if limit:
-    M = 10000
 sigma_noise = 0.1
 
+# Parameters of the ground-truth
 c_0 = -8.
 c_1 = 0.
 c_2 = 1.5
 
+# Ground-truth
 def f(x):
     return c_0 * (x[:, 0] - x[:, 1]).cos() * (x[:, 0] + x[:, 1]).cos()\
            + c_1*(x[:, 0] + x[:, 1]) ** 1 + c_2 * x[:, 2]
 
+# Generate the data
 X = m.sample([int(M)]).squeeze()
 y = f(X) + sigma_noise*torch.randn((M,))
 y = y.reshape((-1, 1))
@@ -90,8 +90,6 @@ test_loader  = get_data_loader(x_test, y_test, features, batch_size, shuffle=Fal
 
 # predictive model architecture
 size_ensemble = 5
-if limit:
-    size_ensemble = 200
 layerwidths = [50, 20, 10]
 activation = "ReLU"
 
@@ -101,6 +99,10 @@ learning_rate = 0.001
 
 # %% Train models
 
+from uxai.ensembles import Ensemble, evaluate_ensemble
+from uxai.methods import method_reduce_lr
+
+# Create an Ensemble of MlPs
 models = Ensemble(size_ensemble=size_ensemble, 
                   layerwidths=layerwidths, 
                   input_dim=x_train.shape[1],
@@ -110,6 +112,8 @@ MyMethod = method_reduce_lr(n_epochs=n_epochs,
                             learning_rate=learning_rate, 
                             use_scheduler=False)
 MyMethod.apply(models, train_loader_s)
+
+# Apply scaling `inside the black-box`
 models.preprocess  = scaler_x.to(models.hparams.device)
 models.postprocess = scaler_y.to(models.hparams.device)
 
@@ -120,7 +124,7 @@ perf_df = pd.DataFrame(perfs.numpy(), columns=["Train", "Test"],
         index=[f"h_{i}" for i in range(models.hparams.size_ensemble)] + ['h_mean'])
 print(perf_df)
 
-# target stddev as a reference
+# Target stddev as a reference
 print(f"Target standard deviation : {y.std():.4f}")
 
 # %%
@@ -133,18 +137,16 @@ latex_feature_map = [f"$x_{i+1}=1.57$" for i in range(4)]
 y_pred = models(x_plain).detach().cpu()
 
 # Useful prints
-print(f"Point to explain : {x_plain}")
-print(f"Predictions : {y_pred.squeeze()}")
+print(f"Point to explain : {x_plain.ravel().tolist()}")
+print(f"Predictions : {list(y_pred.squeeze().tolist())}")
 print(f"Aggregated Prediction : {y_pred.mean():.4f}")
 print(f"True target : {y_plain.item():.4f}")
 error = torch.abs(y_pred - y_plain).max()
-print(f"Max absolute error in the ensemble :{error.item():.4f}")
+print(f"Max absolute error in the ensemble : {error.item():.4f}")
 
 # Background reference ( all of the training points )
 background_value = models(x_train).mean(1).detach().cpu()
-print(f"Background values : {background_value.squeeze()}")
-print(f"Background mean value : {background_value.mean().squeeze():.4f}")
-
+print(f"Background values : {background_value.squeeze().tolist()}")
 
 # %%
 import shap
@@ -176,16 +178,17 @@ ordered_test_perf = np.concatenate([perfs[model_idxs, 1], perfs[-1:, 1]])
 pcp(phis[model_idxs, :], latex_feature_map, test_error=ordered_test_perf)
 
 plt.ylim(0, 3)
-plt.savefig(os.path.join("Images", "Motivation", f"attrib_{seed}.pdf"), bbox_inches='tight')
+# plt.savefig(os.path.join("Images", "Motivation", f"attrib_{seed}.pdf"), bbox_inches='tight')
 plt.show()
 
 # %%
 
+from utils import SchulzLeik
 # How current methods propose to deal with the uncertainty
 # of feature attributions
 df = pd.DataFrame()
 
-# Shaikana
+# Shaikhina et al.
 df["Mean"] = mean_phi
 df["Std"] = std_phi
 df.index = latex_feature_map
@@ -198,6 +201,7 @@ print(df.to_latex())
 
 
 # %% Total order aggregated model (mean attributions)
+
 from uxai.partial_orders import intersect_total_orders
 PO = intersect_total_orders(np.expand_dims(phis.mean(0),0), feature_map, threshold=0, attribution=True)
 dot = PO.print_hasse_diagram()
@@ -208,6 +212,7 @@ dot.render(filename, format='png')
 dot
 
 # %% Partial order of consensus
+
 PO = intersect_total_orders(phis, feature_map, threshold=0., attribution=True)
 dot = PO.print_hasse_diagram(show_ambiguous=False)
 
