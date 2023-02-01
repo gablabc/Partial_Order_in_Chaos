@@ -1,5 +1,4 @@
 """ Train Kernel Ridge Regression to predict 1-10 COMPAS scores """
-
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
@@ -15,6 +14,7 @@ from utils import setup_pyplot_font
 import os, sys
 sys.path.append(os.path.join('..'))
 from uxai.kernels import KernelRashomon
+
 
 
 if __name__ == "__main__":
@@ -45,7 +45,7 @@ if __name__ == "__main__":
                                         X_train, y_train,
                                         scoring="neg_root_mean_squared_error", cv=kfold)
     print("#### Random Forest ####")
-    print(f"FR CV RMSE {cv_rf_score.mean():.2f}")
+    print(f"RF CV RMSE {cv_rf_score.mean():.2f}")
     print(f"Target Std {y.std():.2f}\n")
 
 
@@ -57,13 +57,15 @@ if __name__ == "__main__":
         base_estimator= KernelRashomon(kernel="poly", gamma=0.1, degree=3, n_jobs=args.n_jobs)
     else:
         raise Exception("the Kernel must either be rbf or poly")
-    
+
+    lambd_space = np.logspace(-6, -1, args.n_steps)
+    gamma_space = np.logspace(-5, 5, args.n_steps)
     search = GridSearchCV(
         base_estimator,
         cv=kfold,
         scoring='neg_root_mean_squared_error',
-        param_grid={"lambd": np.logspace(-6, -1, args.n_steps),
-                    "gamma": np.logspace(-5, 5, args.n_steps)},
+        param_grid={"lambd": lambd_space,
+                    "gamma": gamma_space},
         verbose=2,
     )
     search.fit(X_train, y_train)
@@ -73,19 +75,33 @@ if __name__ == "__main__":
     # Train fit the Rashomon Parameter
     kr.fit(X_train, y_train, fit_rashomon=True)
 
+    # Results of CV
+    best_idx = np.argmax(res['mean_test_score'])
+    lambdas = res['param_lambd'].data.astype(np.float64)
+    gammas = res['param_gamma'].data.astype(np.float64)
+
+    # Sizes of dots will encode gamma
+    sizes = np.log10(res['param_gamma'].data.astype(np.float64))
+    sizes -= sizes.min() - 1
+    sizes = np.sort(np.unique(sizes))
+
     # Plot the results of hyper-parameter optimization
     plt.figure()
+    for i, gamma in enumerate(gamma_space):
+        idx_select = np.where(gammas == gamma)[0]
+        plt.plot(lambdas[idx_select], -res['mean_test_score'][idx_select], 
+                    "b-o", alpha=0.5, markersize=2*sizes[i])
 
-    jitter = np.random.uniform(0.8, 1.2, size=(args.n_steps**2,))
-    plt.scatter(res['param_lambd']*jitter, -res['mean_test_score'], alpha=0.5)
-    plt.plot(kr.get_params()['lambd'], -search.best_score_, 'r*', markersize=15, markeredgecolor='k')
-    plt.plot([7.5e-6, 0.3], cv_rf_score.mean() * np.ones(2), 'k--')
-    plt.plot([7.5e-6, 0.3], y_train.std() * np.ones(2), 'k--')
-    plt.xlim(7.5e-6, 0.3)
+    plt.plot(lambdas[best_idx], -search.best_score_, 'r*', markersize=10, markeredgecolor='k')
+
+    plt.plot([7.5e-7, 0.2], cv_rf_score.mean() * np.ones(2), 'k--')
+    plt.plot([7.5e-7, 0.2], y_train.std() * np.ones(2), 'k--')
+    plt.xlim(7.5e-7, 0.2)
     plt.xlabel(r"Regularization $\lambda$")
     plt.ylabel("Cross-Validated RMSE")
     plt.xscale('log')
     plt.savefig(os.path.join("Images", "COMPAS", f"performance_{args.kernel}.pdf"), bbox_inches='tight')
+    plt.show()
 
     # Test perf
     print(f"Ridge Test RMSE {mean_squared_error(kr.predict(X_test), y_test, squared=False):.2f}")

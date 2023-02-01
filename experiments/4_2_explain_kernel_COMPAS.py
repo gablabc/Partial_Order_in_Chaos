@@ -21,8 +21,11 @@ X, y, features, names = DATASET_MAPPING["compas"]()
 # Scale numerical features
 scaler = StandardScaler().fit(X[:, features.non_nominal])
 X[:, features.non_nominal] = scaler.transform(X[:, features.non_nominal])
-# kernel = "rbf"
-kernel = "poly"
+# Split train/test
+_, X_test, _, y_test = train_test_split(X, y, test_size=0.2, 
+                                            shuffle=True, random_state=0)
+kernel = "rbf"
+# kernel = "poly"
 model = load(os.path.join("models", "COMPAS", f"kernel_{kernel}.joblib"))
 def get_feature_map(x):
     """ Returns x in a human-interpretable format """
@@ -37,7 +40,7 @@ image_path = os.path.join("Images", "COMPAS")
 
 # Assess Performance
 print(f"Train loss = {model.MSE:.4f} + {model.lambd} {model.h_norm():.4f} = {model.train_loss:.4f}")
-rel_epsilon = 0.015
+rel_epsilon = 0.02
 upper_bound_loss = (1 + rel_epsilon) * model.train_loss
 print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.4f}")
 # Get the absolute epsilon
@@ -46,9 +49,6 @@ abs_epsilon = model.get_epsilon(rel_epsilon)
 # %%
 
 ## Global Feature Importance ##
-# Split train/test
-_, X_test, _, y_test = train_test_split(X, y, test_size=0.2, 
-                                            shuffle=True, random_state=0)
 min_max_importance, global_PO = model.feature_importance(X_test, y_test.reshape((-1, 1)), 
                                     abs_epsilon, feature_names=features.names, idxs=None, threshold=-100)
 
@@ -89,7 +89,7 @@ def local_feature_attribution(name_x, name_z):
     gap_errors = []
     steps = [5, 10, 25, 50, 100, 200, 400, 800]
     for step in steps:
-        rashomon_po = model.attributions(x, z, n=step)
+        rashomon_po = model.feature_attributions(x, z, n=step)
         print(rashomon_po.phi_mean.shape)
         gap_errors.append(np.abs(gap - rashomon_po.phi_mean.sum()))
 
@@ -103,7 +103,7 @@ def local_feature_attribution(name_x, name_z):
 
 
     ### Resulting Local Feature Attributions ###
-    rashomon_po = model.attributions(x, z, n=1000)
+    rashomon_po = model.feature_attributions(x, z, n=1000)
 
     # Extreme predictions
     _, min_max_preds = model.predict(x, epsilon=abs_epsilon)
