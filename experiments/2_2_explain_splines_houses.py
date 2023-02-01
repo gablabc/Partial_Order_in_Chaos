@@ -1,4 +1,4 @@
-""" Compute the Feature Attributions for Spline models """
+""" Compute the Feature Attributions/Importance for Spline models """
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -48,14 +48,15 @@ if __name__ == "__main__":
         assert dim * n_complex_feat + n_simple_feat == model[1].n_features
         idxs =[[i] for i in range(n_simple_feat)]
         idxs += [list(range(i, i+dim)) for i in range(n_simple_feat, model[1].n_features, dim)]
+        print(idxs)
         assert len(idxs) == n_features
 
         # Perf of the least square
-        RMSEs.append(model[1].RMSE[0])
+        RMSEs.append(model[1].RMSE)
         tolerances = RMSEs[-1] + extra_tolerance
 
         H = model[0].transform(X)
-        rashomon_po = model[1].attributions(H, idxs=idxs)
+        rashomon_po = model[1].feature_attributions(H, idxs=idxs)
         epsilon_space = model[1].get_epsilon(tolerances)
         utilities.append(rashomon_po.get_utility(epsilon_space))
 
@@ -72,41 +73,42 @@ if __name__ == "__main__":
             epsilon = model[1].get_epsilon(tolerance_star)
             extreme_attribs = rashomon_po.minmax_attrib(epsilon)
 
-            # for i in idxs_to_explain:
-            #     print(f"### Instance {i} ###\n")
+            for i in idxs_to_explain:
+                print(f"### Instance {i} ###\n")
 
-            #     x_study = X[i]
-            #     x_map = features.map_values(x_study)
-            #     # Map to the transformation h
-            #     h_map = [x_map[i] for i in simple_feature_idx] +\
-            #             [x_map[i] for i in complex_feature_idx]
-            #     print(h_map)
+                x_study = X[i]
+                x_map = features.map_values(x_study)
+                # Map to the transformation h
+                h_map = [x_map[i] for i in simple_feature_idx] +\
+                        [x_map[i] for i in complex_feature_idx]
+                print(h_map)
 
-            #     # Predictions
-            #     pred_mean, minmax_preds = model[1].predict(H[[i]], epsilon)
-            #     print(f"True Price {y[i, 0]:.0f} $")
-            #     print(f"Point Prediction {pred_mean[0, 0]:.0f} $")
-            #     print(f"Predictions {minmax_preds[0, 0]:.0f}, {minmax_preds[0, 1]:.0f} $")
-            #     # TODO show the gap
+                # Predictions
+                pred_mean, minmax_preds = model[1].predict(H[[i]], epsilon)
+                print(f"True Price {y[i, 0]:.0f} $")
+                print(f"Point Prediction {pred_mean[0, 0]:.0f} $")
+                print(f"Predictions {minmax_preds[0, 0]:.0f}, {minmax_preds[0, 1]:.0f} $")
+                # TODO show the gap
 
-            #     # Local Feature Attribution
-            #     PO = rashomon_po.get_poset(i, epsilon, h_map)
-            #     if PO is not None:
-            #         dot = PO.print_hasse_diagram(show_ambiguous=False)
-            #         dot.render(filename=os.path.join(save_path, "PO", f"PO_instance_{i}"), format='pdf')
+                # Local Feature Attribution
+                PO = rashomon_po.get_poset(i, epsilon, h_map)
+                if PO is not None:
+                    dot = PO.print_hasse_diagram(show_ambiguous=False)
+                    dot.render(filename=os.path.join(save_path, "PO", f"PO_instance_{i}"), format='pdf')
 
-            #         # Bar plot
-            #         widths = (extreme_attribs[i, :, 1] - extreme_attribs[i, :, 0])/2
-            #         bar(PO.phi_mean, h_map, xerr=widths.T)
-            #         plt.savefig(os.path.join(save_path, "PO", f"Attrib_instance_{i}.pdf"), bbox_inches='tight')
-
-            #     else:
-            #         print("Gaps is not well-defined")
+                    # Bar plot
+                    widths = (extreme_attribs[i, :, 1] - extreme_attribs[i, :, 0])/2
+                    bar(PO.phi_mean, h_map, xerr=widths.T)
+                    plt.savefig(os.path.join(save_path, "PO", f"Attrib_instance_{i}.pdf"), bbox_inches='tight')
+                    plt.close()
+                else:
+                    print("Gaps is not well-defined")
             
 
             # Global Feature Importance
             tau = 200
-            min_max_importance, PO = model[1].feature_importance(epsilon, reorder_feature_names, \
+            min_max_importance, PO = model[1].feature_importance(epsilon,
+                                            feature_names=reorder_feature_names,
                                             idxs=idxs, threshold=tau, top_bottom=True)
 
             # Bar plot
@@ -120,12 +122,6 @@ if __name__ == "__main__":
             dot.render(os.path.join(save_path, "PO", filename), format='pdf')
             print("\n")
 
-            # ##### Critical epsilon for pos attrib of OverallQual in {8,9,10} #####
-            # idxs_high_qual = np.where(X[:, 2]>=8)[0]
-            # eps_critical = rashomon_po.pos_crit_eps[idxs_high_qual, reorder_feature_names.index('OverallQual')]
-            # # Scale back to USD
-            # eps_critical = model[1].y_std * np.sqrt(eps_critical.min() + model[1].uMSE)
-            # print(f"Critical epsilon : {eps_critical:.0f} USD")
 
     fig, ax = plt.subplots()
     ax.set_prop_cycle(color=['blue','red','orange'])
@@ -144,13 +140,4 @@ if __name__ == "__main__":
     #ax.legend(framealpha=1, loc="upper left", bbox_to_anchor=(0.1,1))
     ax.legend(loc="best")
     plt.savefig(os.path.join(save_path, f"tradeoffs.pdf"), bbox_inches='tight')
-
-
-
-
-# # Where to save figures
-# save_path = os.path.join("Images", "Explain", "kaggle_houses", "global", "Splines")
-# # Make folder to save local explaination images
-# if not os.path.exists(save_path):
-#     os.makedirs(save_path)
 
