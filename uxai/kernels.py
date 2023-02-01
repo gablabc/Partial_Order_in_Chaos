@@ -25,20 +25,20 @@ def grad_rbf(X, Dict, K, gamma):
 
     Parameters
     ----------
-    X: (N, d) array
+    X: (N, d) `np.array`
         Where to compute the gradients
-    Dict: (R, d) array
+    Dict: (R, d) `np.array`
         Reference points
-    K: (N, R) array
-        Matrix whose ith row and ith column if k(x^(i), r^(j))
-    gamma: float
+    K: (N, R) `np.array`
+        Matrix whose ith row and jth column if k(x^(i), r^(j))
+    gamma: `float`
         Scale parameter of the RBF kernel
 
     Returns
     -------
-    sol_values: (N, d, R) array
-        3D tensor whose ith row jth column is the gradient of 
-        k(., r^(j)) evaluated at x^(i)
+    sol_values: (N, d, R) `np.array`
+        3D tensor whose element ijk is the jth component of the
+        gradient of k(. , r^(k)) evaluated at x^(i)
     """
     N, d = X.shape
     R = Dict.shape[0]
@@ -53,20 +53,20 @@ def grad_poly(X, Dict, gamma, degree):
 
     Parameters
     ----------
-    X: (N, d) array
+    X: (N, d) `np.array`
         Where to compute the gradients
-    Dict: (R, d) array
+    Dict: (R, d) `np.array`
         Reference points
-    gamma: float
+    gamma: `float`
         Scale parameter of the Poly kernel
-    degree: int
+    degree: `int`
         Polynomial degree
 
     Returns
     -------
-    sol_values: (N, d, R) array
-        3D tensor whose ith row jth column is the gradient of 
-        k(., r^(j)) evaluated at x^(i)
+    sol_values: (N, d, R) `np.array`
+        3D tensor whose element ijk is the jth component of the
+        gradient of k(. , r^(k)) evaluated at x^(i)
     """
     N, d = X.shape
     R = Dict.shape[0]
@@ -79,17 +79,40 @@ def grad_poly(X, Dict, gamma, degree):
 
 
 class KernelRashomon(RegressorMixin, BaseEstimator):
+    """
+    Rashomon Set for Kernel Ridge Regression.
 
-    def __init__(
-        self,
-        lambd=1,
-        *,
-        kernel="rbf",
-        gamma=None,
-        degree=3,
-        coef0=1,
-        kernel_params=None,
-        n_jobs=None
+    KernelRashomon fits a model in the RKHS associated with a symmetric
+    positive definite Kernel K. The final function takes the form 
+    
+    `h(x) = \sum_{k=1}^R alpha_k k(x, r^(k))`
+    
+    and the parameters alpha are learned via regularized least square. 
+    The corresponding Rashomon Set is an ellipsoid of the form
+
+    `(alpha - alpha_S)^T A (alpha - alpha_S) <= epsilon`
+
+    over which we can compute a consensus on local/global feature importance
+    statements.
+
+
+    Attributes
+    ----------
+    alpha_s : (R, 1) `np.array`
+        Estimated alpha coefficients
+
+    MSE : `float`
+        Mean-Squared-Error of w_hat
+
+    RMSE : `float`
+        Root-Mean-Squared-Error of w_hat
+
+    train_loss : `float`
+        Loss minimized during training `MSE + lambd ||h||^2`
+
+    """
+    def __init__(self, lambd=1, kernel="rbf", gamma=None, degree=3, coef0=1,
+                                                kernel_params=None, n_jobs=None
     ):
         self.lambd = lambd
         self.kernel = kernel
@@ -102,6 +125,8 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
 
     def get_kernel(self, X, Y=None):
         if Y is None:
+            # Add small noise to Kernel to ensure 
+            # it is positive definite
             eps = 1e-8 * np.eye(self.R)
         else:
             eps = 0
@@ -109,11 +134,43 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
             params = self.kernel_params or {}
         else:
             params = {"gamma": self.gamma, "degree": self.degree, "coef0": self.coef0}
+        # Compute the kernel using the sklearn implementation
         K = pairwise_kernels(X, Y, metric=self.kernel, filter_params=True, n_jobs=self.n_jobs, **params) 
         return K + eps
 
 
     def fit(self, X, y, fit_rashomon=False):
+        """
+        Fit linear model.
+
+        Parameters
+        ----------
+        X : (n_samples, n_features) `np.array`
+            Input values.
+        y : (n_samples,) `np.array`
+            Target values.
+        fit_rashomon : `bool`, default=False
+            whether or not to compute the Rashomon Set. This is useful
+            ehen fine-tuning the hyperparameters and you do not care
+            about the Rashomon Set yet.
+
+        Returns
+        -------
+        self : object
+            Fitted Estimator.
+        
+        Examples
+        --------
+        >>> from uxai.kernels import KernelRashomon
+        >>> kern_rashomon = KernelRashomon()
+        >>> kern_rashomon.fit(X, y, fit_rashomon=True)
+        >>> # Get the training objective
+        >>> kern_rashomon.train_loss
+        0.1346
+        >>> # Get the first three coefficients
+        >>> kern_rashomon.alpha_s[:3, 0]
+        array([16.76765973, -2.9384931 , -3.6456996 ])
+        """
         self.N, self.n_features = X.shape
         self.fit_rashomon = False
 
@@ -139,17 +196,19 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         self.train_loss = self.MSE + self.lambd * self.h_norm()
         self.RMSE = np.sqrt(self.MSE)
         
-        # Add Rashomon-Related parameters, this is not necessary when 
+        # Add Rashomon-related parameters, this is not necessary when 
         # Fine-tuning the hyperparameters.
         if fit_rashomon:
             # Define Rashomon Set
             self.A = A
             regul_noise = 1e-10
             noise_added = False
-            # Due to numerical error, it is possible, but rare, that the
-            # Ellipsoid matrix is not positive definite. In that case,
-            # increasingly add regularizing noise which means that we
-            # slightly underestimate the Rashomon Set
+            # Due to numerical errors and the presence of very similar 
+            # reference points r^(i) r^(j), it is possible that the
+            # Ellipsoid matrix has null eigen-values. In that case,
+            # progressively add noise on the diagonal of A until
+            # we can safely do a cholesky decomposition. This means
+            # that we are slightly underestimating the true Rashomon Set
             while True:
                 try:
                     self.A_half = np.linalg.cholesky(self.A)
@@ -174,26 +233,31 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         return self.alpha_s.T.dot(self.K.dot(self.alpha_s)).item()
 
 
-    # def get_RMSE(self, X, y):
-    #     X_ = (X - self.X_mean) / self.X_std
-    #     y_ = (y - self.y_mean) / self.y_std
-
-    #     # Fit the optimal model on training data
-    #     preds = self.regr.predict(X_)
-
-    #     # Unscaled MSE
-    #     uMSE = mean_squared_error(y_, preds)
-    #     RMSE = self.y_std * np.sqrt(uMSE)
-    #     return RMSE
-
-
     def get_epsilon(self, relative_eps):
         """ Get the epsilon required to reach a given relative loss increase """
         return relative_eps * self.train_loss
 
 
     def predict(self, X, epsilon=None):
-        """ Return point prediction of alpha_s and [Min, Max] preds of Rashomon Set"""
+        """ 
+        Return point prediction of alpha_S and [Min, Max] preds of Rashomon Set
+
+        Parameters
+        ----------
+        X: (n_samples, n_features) `np.array`
+            Samples on which to predict
+        epsilon: `float`, default=None
+            Rashomon parameter. If it is provided, then the function also
+            returns the min/max predictions on each sample.
+
+        Returns
+        -------
+        y: (n_samples,) `np.array`
+            Predicted values.
+        minmax_preds: (n_samples, 2) `np.array`
+            Minimum and Maximum predictions over the Rashomon Set.
+            Only returned if epsilon is not None.
+        """
         K = self.get_kernel(X, self.Dict)
         preds = np.dot(K, self.alpha_s)
 
@@ -202,7 +266,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         
         # Compute min/max preds
         A_half_inv = self.A_half_inv * np.sqrt(epsilon)
-        minmax_preds = opt_lin_ellipsoid(K.T, A_half_inv, self.alpha_s, return_input_sol=False)
+        minmax_preds = opt_lin_ellipsoid(K.T, A_half_inv, self.alpha_s)
         return preds + self.mu, minmax_preds + self.mu
 
 
@@ -247,7 +311,38 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
 
 
 
-    def attributions(self, X, z, n=100, top_bottom=True):
+    def feature_attributions(self, X, z, n=100, top_bottom=True):
+        """ 
+        Compute the Local Feature Attributions (LFA) for a set of samples `x_instances`.
+        These LFAs are encoded as a RashomonPartialOrders object.
+
+        Parameters
+        ----------
+        X: (n_samples, n_features) `np.array`
+            Instances on which to compute the LFA
+        z: (1, features) `np.array`
+            Baseline Instance
+        n: `int`
+            Number of steps in the quadrature
+        
+        Returns
+        -------
+        PO : RashomonPartialOrders
+            Object encoding all partial orders for al instances at any tolerance level epsilon
+
+        Examples
+        --------
+        >>> from uxai.kernels import KernelRashomon
+        >>> kern_rashomon = KernelRashomon()
+        >>> kern_rashomon.fit(X, y, fit_rashomon=True)
+        >>> # Get epsilon for a tolerance 1.05 * train_loss
+        >>> epsilon = kern_rashomon.get_epsilon(0.05)
+        >>> # Compute the LFA
+        >>> rashomon_po = kern_rashomon.feature_attributions(X)
+        >>> # Get the partial order on instance i with tolerance epsilon
+        >>> PO = rashomon_po.get_poset(i, epsilon, feature_names=["x1", "x2"])
+        """
+
         if X.ndim == 1:
             X = X.reshape((1, -1))
         if z.ndim == 1:

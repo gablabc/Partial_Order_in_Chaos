@@ -1,5 +1,8 @@
+"""
+Test the computations of gradients and numerical quadrature
+on the Gaussian and Polynomial Kernels.
+"""
 # %%
-
 import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('font',**{'family':'serif', 'serif':['Computer Modern Roman'], 'size':11})
@@ -27,15 +30,15 @@ XX, YY = np.meshgrid(np.linspace(-1.5, 1.5, n),
 XX_ = np.column_stack((XX.ravel(), YY.ravel()))
 
 # RBF
-# metric="rbf"
-# params = {"gamma" : 1}
+metric="rbf"
+params = {"gamma" : 1}
 # POLY"
-metric = "poly"
-params = {"gamma" : 0.5, "degree" : 3}
+# metric = "poly"
+# params = {"gamma" : 0.5, "degree" : 3}
 
 K = pairwise_kernels(XX_, r, metric=metric, **params)
 
-
+# Generate a line between x and z
 t = np.linspace(0, 1, 100).reshape((-1, 1))
 line = t * x + (1 - t) * z
 K_line = pairwise_kernels(line, r, metric=metric, **params)

@@ -124,7 +124,6 @@ class LinearRashomon(object):
         ----------
         X : (n_samples, n_features) `np.array`
             Input values.
-
         y : (n_samples,) `np.array`
             Target values.
 
@@ -187,7 +186,6 @@ class LinearRashomon(object):
         ----------
         X : (n_samples, n_features) `np.array`
             Test data.
-
         y : (n_samples,) `np.array`
             Target values.
 
@@ -439,7 +437,7 @@ class LinearRashomon(object):
         >>> # Get epsilon for an extra 0.05 RMSE tolerance
         >>> epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
         >>> # Compute the LFA
-        >>> rashomon_po = model.attributions(X)
+        >>> rashomon_po = linear_rashomon.feature_attributions(X)
         >>> # Get the partial order on instance i with tolerance epsilon
         >>> PO = rashomon_po.get_poset(i, epsilon, feature_names=["x1", "x2"])
         """

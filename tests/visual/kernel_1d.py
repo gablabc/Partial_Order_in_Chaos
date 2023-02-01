@@ -1,3 +1,8 @@
+"""
+Test the Rashomon Set of Kernel Ridge
+on a simple toy example in 1D.
+"""
+
 import numpy as np
 from sklearn.model_selection import GridSearchCV
 from sklearn.kernel_ridge import KernelRidge
@@ -24,30 +29,30 @@ train_size = 100
 #     KernelRashomon(kernel="rbf", gamma=0.1),
 #     param_grid={"lambd": np.logspace(-3, 2, 10), "gamma": np.logspace(-3, 1, 10)},
 # )
-# kr = GridSearchCV(
-#     KernelRashomon(kernel="poly", gamma=0.1),
-#     param_grid={"lambd": np.logspace(-3, 2, 10), "gamma": np.logspace(-3, 1, 10)},
-# )
-# # HP Search
-# kr.fit(X[:train_size], y[:train_size])
-# kr = kr.best_estimator_
+kr = GridSearchCV(
+    KernelRashomon(kernel="poly", gamma=0.1),
+    param_grid={"lambd": np.logspace(-3, 2, 10), "gamma": np.logspace(-3, 1, 10)},
+)
+# HP Search
+kr.fit(X[:train_size], y[:train_size])
+kr = kr.best_estimator_
 
-# # Refit with the Rashomon Parameters
-# kr.fit(X[:train_size], y[:train_size], fit_rashomon=True)
-# lambd = kr.lambd
+# Refit with the Rashomon Parameters
+kr.fit(X[:train_size], y[:train_size], fit_rashomon=True)
+lambd = kr.lambd
 
 ### Manual ###
-lambd = 1e-2
-gamma = 20
-# kr = KernelRashomon(kernel="rbf", gamma=20, lambd=lambd)
-kr = KernelRashomon(kernel="poly", gamma=gamma, lambd=lambd, degree=3)
-kr.fit(X[:train_size], y[:train_size], fit_rashomon=True)
+# lambd = 1e-2
+# gamma = 20
+# # kr = KernelRashomon(kernel="rbf", gamma=20, lambd=lambd)
+# kr = KernelRashomon(kernel="poly", gamma=gamma, lambd=lambd, degree=3)
+# kr.fit(X[:train_size], y[:train_size], fit_rashomon=True)
 
 # Assert Performance
 print(f"Train loss = {kr.MSE:.4f} + {lambd} {kr.h_norm():.4f} = {kr.train_loss:.4f}")
 epsilon_rel = 0.05
 upper_bound_loss = (1 + epsilon_rel) * kr.train_loss
-print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.4f}")
+print(f"Upper bound (1 + epsilon') (L(a) + lambda ||h_a||^2) : {upper_bound_loss:.4f}")
 # Get the absolute epsilon
 epsilon = kr.get_epsilon(epsilon_rel)
 
@@ -57,7 +62,7 @@ z = z / np.linalg.norm(z, axis=1, keepdims=True)
 alpha_bound = z.dot(kr.A_half_inv).T * np.sqrt(epsilon) + kr.alpha_s # (R, Nsamples)
 all_preds = np.dot(kr.get_kernel(X_plot, kr.Dict), alpha_bound) + kr.mu
 
-# Ensure that all models have loss bellow epsilon
+# Verify if all models have loss smaller than the Upper bound
 K_inside = kr.get_kernel(kr.Dict)
 all_MSE = np.mean((y[:train_size].reshape((-1, 1)) - K_inside.dot(alpha_bound) - kr.mu) ** 2, axis=0)
 all_h_norms = np.sum(alpha_bound * K_inside.dot(alpha_bound), axis=0)

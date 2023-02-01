@@ -169,7 +169,7 @@ plt.show()
 # %%
 from IPython import display
 
-rashomon_po = kr.attributions(X_explain, z)
+rashomon_po = kr.feature_attributions(X_explain, z)
 
 # %%
 extreme_attribs = rashomon_po.minmax_attrib(abs_epsilon)
