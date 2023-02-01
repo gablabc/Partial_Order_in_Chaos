@@ -1,3 +1,9 @@
+"""
+Study the Rashomon Set of Linear Regression on a
+toy 2D problem. This is used for validating the
+`uxai.linear.LinearRashomon` class
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import chi2
@@ -20,13 +26,14 @@ def generate_data(n_samples, noise):
 noise = 0.2
 X, y = generate_data(2000, noise)
 
+# Compute the Rashomon Set with an extra tolerance of 0.05
 linear_rashomon = LinearRashomon().fit(X, y)
-RMSE = linear_rashomon.RMSE[0]
+RMSE = linear_rashomon.RMSE
 print(f"RMSE : {RMSE}")
 print(f"Maxmimum tolerable RMSE : {RMSE + 0.05}")
 epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
 
-# Sample points in the Rashomon set Boundary
+# Sample points on the Rashomon set boundary for validation
 z = np.random.normal(0, 1, size=(40000, 3))
 z = z / np.linalg.norm(z, axis=1, keepdims=True)
 w_boundary = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
@@ -62,7 +69,6 @@ print(linear_rashomon.min_max_coeffs(epsilon))
 line = np.linspace(-3, 3, 100)
 # Show PDP
 for idx in [0, 1]:
-
     pdp = linear_rashomon.partial_dependence(line, idx=idx, epsilon=epsilon)
     plt.figure()
     plt.fill_between(line, pdp[:, 0], pdp[:, 1], alpha=0.5)
@@ -70,8 +76,8 @@ for idx in [0, 1]:
     plt.ylabel("Partial Dependence")
 
 
-plt.figure()
 # Plot the GFI and compare with sampling
+plt.figure()
 bp = plt.boxplot(w_boundary[:, 1:] * y.std(), patch_artist=True)
 
 for patch in bp['boxes']:
@@ -81,20 +87,19 @@ extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"
 plt.plot(range(1, 3), extreme_imp[:, 0], 'r')
 plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
 
-
+# Visualize the partial order
 dot = global_po.print_hasse_diagram()
 dot.render(filename=os.path.join('Images', 'PO_Global_Linear'), format='png')
 
 
 # Plot the LFA and compare with sampling
-
 plt.figure()
 bp = plt.boxplot(w_boundary[:, 1:] * y.std() / X.std(0) * (X[0] - np.mean(X, 0)), patch_artist=True)
 
 for patch in bp['boxes']:
     patch.set_facecolor('#9999FF')
 
-rashomon_po = linear_rashomon.attributions(X)
+rashomon_po = linear_rashomon.feature_attributions(X)
 extreme_attribs = rashomon_po.minmax_attrib(epsilon)[0]
 plt.plot(range(1, 3), extreme_attribs[:, 0], 'r')
 plt.plot(range(1, 3), extreme_attribs[:, 1], 'r')

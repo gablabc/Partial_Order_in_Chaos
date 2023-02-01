@@ -1,3 +1,9 @@
+"""
+Study the Rashomon Set of Spline Regression on a
+toy 2D problem. This is used for validating the
+`uxai.linear.LinearRashomon` class
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import SplineTransformer
@@ -11,7 +17,7 @@ from uxai.linear import LinearRashomon
 np.random.seed(42)
 X = np.random.uniform(-1, 1, size=(2000, 2))
 splt = SplineTransformer(n_knots=4, degree=3, include_bias=False).fit(X)
-features_subset = [[0,1,2,3,4], [5,6,7,8,9]]
+coallitions = [[0,1,2,3,4], [5,6,7,8,9]]
 H = splt.transform(X)
 #print(H.shape)
 
@@ -20,7 +26,7 @@ y = H.dot(np.random.uniform(-2, 2, size=(H.shape[1], 1))) + 0.1 * np.random.norm
 
 
 linear_rashomon = LinearRashomon().fit(H, y)
-RMSE = linear_rashomon.RMSE[0]
+RMSE = linear_rashomon.RMSE
 print(f"RMSE : {RMSE}")
 print(f"Maxmimum tolerable RMSE : {RMSE + 0.05}")
 epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
@@ -66,12 +72,12 @@ lines = np.column_stack((line, line))
 H_lines = splt.transform(lines)
 for d in [0, 1]:
     plt.figure()
-    plt.plot(line, H_lines[:, features_subset[d]])
+    plt.plot(line, H_lines[:, coallitions[d]])
     knots = splt.bsplines_[d].t
     plt.vlines(knots[3:-3], ymin=0, ymax=0.8, linestyles="dashed", color="k")
 
     plt.figure()
-    idxs = features_subset[d]
+    idxs = coallitions[d]
     pdp = linear_rashomon.partial_dependence(H_lines[:, idxs], idx=idxs, epsilon=epsilon)
     plt.fill_between(line, pdp[:, 0], pdp[:, 1], alpha=0.5)
 
@@ -86,7 +92,7 @@ for d in [0, 1]:
 plt.figure()
 importances = np.zeros((w_boundary.shape[0], 2))
 for d in [0, 1]:
-    idxs = features_subset[d]
+    idxs = coallitions[d]
     i = np.array(idxs)+1
     coord_attrib = linear_rashomon.y_std * H_tilde[:, i].dot(w_boundary[:, i].T) 
     importances[:, d] = np.std(coord_attrib, axis=0)
@@ -96,7 +102,7 @@ bp = plt.boxplot(importances, patch_artist=True)
 for patch in bp['boxes']:
     patch.set_facecolor('#9999FF')
 
-extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"], idxs=features_subset)
+extreme_imp, global_po = linear_rashomon.feature_importance(epsilon, ["x1", "x2"], idxs=coallitions)
 plt.plot(range(1, 3), extreme_imp[:, 0], 'r')
 plt.plot(range(1, 3), extreme_imp[:, 1], 'r')
 
@@ -120,13 +126,13 @@ per_coord_attrib = w_boundary[:, 1:] * y.std() * (h - np.mean(H, 0)) / H.std(0)
 print(per_coord_attrib.shape)
 attribs = []
 for d in range(2):
-    attribs.append(per_coord_attrib[:, features_subset[d]].sum(1))
+    attribs.append(per_coord_attrib[:, coallitions[d]].sum(1))
 
 plt.figure()
 bp = plt.boxplot(attribs, patch_artist=True)
 for patch in bp['boxes']:
     patch.set_facecolor('#9999FF')
-rashomon_po = linear_rashomon.attributions(h[0], idxs=features_subset)
+rashomon_po = linear_rashomon.feature_attributions(h[0], idxs=coallitions)
 extreme_attribs = rashomon_po.minmax_attrib(epsilon)[0]
 plt.plot(range(1, 3), extreme_attribs[:, 0], 'r')
 plt.plot(range(1, 3), extreme_attribs[:, 1], 'r')
