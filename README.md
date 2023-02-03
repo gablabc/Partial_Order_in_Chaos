@@ -25,9 +25,11 @@ We present some concrete examples
 ## Permutation Importance on COMPAS
 
 Here we compute the Global Feature Importance (GFI) on COMPAS using the Permutation Importance
-method. That is, we shuffle the value of a feature in the data and compute the resulting decrease in importance. The larger the decrease, the most important the feature is to the model. We show the range of GFI between models in the Rashomon Set of Kernel Ridge
+method. That is, we shuffle the value of a feature in the data and compute the resulting decrease in performance. The larger the decrease, the most important the feature is to the model. We show the range of GFI between models in the Rashomon Set of Kernel Ridge
 Regression fitted to predict COMPAS scores.
+
 ![GFI COMPAS](experiments/Images/COMPAS/GFI_COMPAS.png)
+
 First of, looking at the bar charts, no model relies strongly on `Sex` and `Charge` so we could discard these features when fitting Kernel Ridge. Secondly, looking at the Hasse Diagram, we see that all models agree features
 `Age` and `Priors` are more important than any other. Therefore, these two feature are the **most** important ones when predicting COMPAS scores with Kernel Ridge. We note that `Age` and `Priors` are incomparable since there is no directed path connecting them. This means that some good models rely more
 on one then the other.
@@ -35,9 +37,11 @@ on one then the other.
 ## Local Feature Attributions for House Price
 
 In this experiment, we compute the Local Feature Attributions (LFA) of additive models fitted to predict house prices.
-Typically, the LFA would be computed with techniques like SHAP or Integrated Gradient, but for additive models, both techniques end up yielding the same LFA. We can compute the LFA of one of the most expensive houses in the dataset to understand why is price is so much higher-than-average.
+Typically, the LFA would be computed with techniques like SHAP or Integrated Gradient, but for additive models, both techniques end up yielding the same LFA. We can compute the LFA of one of the most expensive houses in the dataset to understand why its price is so much higher-than-average.
+
 ![LFA Houses](experiments/Images/Kaggle-Houses/LFA_Houses.png)
-The Hasse diagram reveals that, when explaining the high price of this house, all models agree the **most** important feature is `OverallQual=10`. This suggests that the quality of the materials of the house might be a major factor in this dataset. Bellow `Overall=10` in the Hasse diagram, we have other features that are also important for this prediction, but to a lesser extend than `OverallQual=10`.
+
+The Hasse diagram reveals that, when explaining the high price of this house, all models agree the **most** important feature is `OverallQual=10`. This suggests that the quality of the materials of the house might be a major factor in this dataset. Lower in the Hasse diagram, we have other features   (`1stFlrSF=very large` and `GarageArea=very large`) that are also important for the high price, but to a lesser extend than `OverallQual=10`.
 
 ## Structure
 
