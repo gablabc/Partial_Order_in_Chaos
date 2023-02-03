@@ -12,7 +12,7 @@ The main idea is that,
 given a ML task with finite data, there is no single best predictor
 but rather an equivalence class of predictors with similar empirical performance,
 also called a Rashomon Set 
-$$\{h\in \mathcal{H}: \text{error}(h) \leq \epsilon\}.$$
+$$\lbrace h\in \mathcal{H}: \text{error}(h) \leq \epsilon\rbrace.$$
 
 Each of these models gives a different, but still valid perspective on the data.
 Now, if you were to compute post-hoc explanations  (Permutation Importance, SHAP, Integrated Gradient, etc.), you would draw different (and even contradicting) conclusions from the diverse models in the Rashomon Set.
