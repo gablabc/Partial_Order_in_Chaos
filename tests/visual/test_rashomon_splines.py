@@ -7,7 +7,6 @@ toy 2D problem. This is used for validating the
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import SplineTransformer
-from scipy.stats import chi2
 
 import sys, os
 sys.path.append(os.path.join('../..'))
@@ -21,7 +20,8 @@ coallitions = [[0,1,2,3,4], [5,6,7,8,9]]
 H = splt.transform(X)
 #print(H.shape)
 
-y = H.dot(np.random.uniform(-2, 2, size=(H.shape[1], 1))) + 0.1 * np.random.normal(0, 1, size=(2000, 1))
+y = H.dot(np.random.uniform(-2, 2, size=(H.shape[1], 1))) + \
+                0.1 * np.random.normal(0, 1, size=(2000, 1))
 #print(y.shape)
 
 
@@ -33,16 +33,15 @@ epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
 
 
 # Sample points on the boundary of the Rashomon set
-z = np.random.normal(0, 1, size=(20000, 1+H.shape[1]))
-z = z / np.linalg.norm(z, axis=1, keepdims=True)
-w_boundary = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
+w_boundary = linear_rashomon.ellipsoid.sample_boundary(20000, epsilon)
 print(w_boundary.shape)
 
 H_ = (H - linear_rashomon.X_mean) / linear_rashomon.X_std
 H_tilde = np.column_stack( (np.ones(len(H_)), H_) )
 
 # Ensure that all models have RMSE bellow epsilon
-all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * H_tilde.dot(w_boundary.T) - linear_rashomon.y_mean) ** 2, axis=0))
+all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * H_tilde.dot(w_boundary.T) - \
+                            linear_rashomon.y_mean) ** 2, axis=0))
 print(np.min(all_RMSE), np.max(all_RMSE))
 
 

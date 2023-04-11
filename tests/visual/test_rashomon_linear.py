@@ -34,9 +34,7 @@ print(f"Maxmimum tolerable RMSE : {RMSE + 0.05}")
 epsilon = linear_rashomon.get_epsilon(RMSE + 0.05)
 
 # Sample points on the Rashomon set boundary for validation
-z = np.random.normal(0, 1, size=(40000, 3))
-z = z / np.linalg.norm(z, axis=1, keepdims=True)
-w_boundary = z.dot(linear_rashomon.A_half_inv) * np.sqrt(epsilon) + linear_rashomon.w_hat.T
+w_boundary = linear_rashomon.ellipsoid.sample_boundary(40000, epsilon)
 
 
 # Is the prediction method working?
@@ -49,7 +47,8 @@ assert linear_rashomon.get_RMSE(X, y) == RMSE
 
 
 # Ensure that all models have RMSE bellow epsilon
-all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * X_tilde.dot(w_boundary.T) - linear_rashomon.y_mean) ** 2, axis=0))
+all_RMSE = np.sqrt(np.mean((y - linear_rashomon.y_std * X_tilde.dot(w_boundary.T) - 
+                            linear_rashomon.y_mean) ** 2, axis=0))
 print(np.min(all_RMSE), np.max(all_RMSE))
 
 

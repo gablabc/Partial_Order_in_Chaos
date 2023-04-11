@@ -8,37 +8,39 @@ from warnings import warn
 
 
 
-def opt_lin_ellipsoid(a, A_half_inv, x_hat, return_input_sol=False):
-    """ 
-    Compute the min/argmin and max/argmax of g(x) = a^t x  with the
-    constraint that (x - x_hat)^T A (x - x_hat) <= 1
-
-    Parameters
-        a: (d, N) array
-        A_half_inv: (d, d) array
-        x_hat: (d, 1) array
-
-    Returns
-        sol_values: (N, 2)
-        sol_inputs: (2, N, d)
-    """
-    a_prime = A_half_inv.dot(a).T # (N, d)
-    norm_a_prime = np.linalg.norm(a_prime, axis=1, keepdims=True) # (N, 1)
-    sol_values = np.array([-1, 1]) * norm_a_prime + a.T.dot(x_hat) # (N, 2)
-    if not return_input_sol:
-        return sol_values
-    else:
-        z_star = a_prime.dot(A_half_inv) / norm_a_prime # (N, d)
-        sol_inputs = np.array([-1, 1]).reshape((2, 1, 1)) * z_star + x_hat.T # (2, N, d)
-        return sol_values, sol_inputs
+def opt_lin_ellipsoid_quadrant(a, ellipsoid_dict, monotocity, epsilon, constraint=True):
+    
+    minmax_preds, arg_minmax = ellipsoid_dict[()].opt_linear(a, epsilon, return_input_sol=True)
+    # Make sure that the optimum respect the monotocity contraints
+    if constraint and (arg_minmax * monotocity.reshape((1, 1, -1)) > 0).any():
+        # Min and Max
+        for i in [0, 1]:
+            mismatch = arg_minmax[i] * monotocity > 0
+            broken_consts, inverse_idx = np.unique(mismatch, axis=0, return_inverse=True)
+            # For each set of broken constraints we resolve the problem with
+            # a slice of the original ellipsoid
+            for j, broken_const in enumerate(broken_consts):
+                # Skip this trivial case
+                if np.sum(broken_const) == 0:
+                    continue
+                # Inputs that lead to an invalid constraint
+                where_invalid = np.where(inverse_idx == j)[0]
+                # Ellipsoid has already been sliced that way
+                if not tuple(broken_const) in ellipsoid_dict:
+                    ellipsoid_dict[tuple(broken_const)] = ellipsoid_dict[()].slice(broken_consts)
+                sliced_ellipsoid = ellipsoid_dict[tuple(broken_const)]
+                # Sliced obj
+                new_a = a[respect_const, where_invalid]
+                minmax_preds[where_invalid, i] = sliced_ellipsoid.opt_linear(new_a, epsilon)[:, i]
+    return minmax_preds
 
 
 
 def qpqc(W, alpha_hat):
     """ Routine for qpqc """
 
-    if np.min(W) < 0:
-        if np.isclose(alpha_hat[np.argmin(W)], 0):
+    if np.min(W) <= 0:
+        if np.isclose(alpha_hat[np.argmin(W)], 0).all():
             raise Exception("Hard Case !!! Don't use the exact solver.")
 
     norm_alpha_hat = np.linalg.norm(alpha_hat)
@@ -85,8 +87,8 @@ def qpqc(W, alpha_hat):
 def qpqc_2(W, b_hat):
     """ Routine for qpqc """
 
-    if np.min(W) < 0:
-        if np.isclose(b_hat[np.argmin(W)], 0):
+    if np.min(W) <= 0:
+        if np.isclose(b_hat[W==np.min(W)], 0).all():
             raise Exception("Hard Case !!! Don't use the exact solver.")
 
     b_hat = -0.5 * b_hat

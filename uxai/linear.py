@@ -1,88 +1,16 @@
-""" Rashomon Sets of Linear/Additive models """
+""" 
+Rashomon Sets of Linear/Additive models.
+Piece-Wise Linear Monotic Additive models
+are also supported
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-from .utils_optim import opt_lin_ellipsoid, opt_qpqc_centered_exact
+from .utils_optim import opt_qpqc_centered_exact
+from .utils import Ellipsoid, abs_interval
 from .partial_orders import PartialOrder, RashomonPartialOrders
-
-
-def get_ellipse_border(A_half_inv, x_hat):
-    """ 
-    Plot the border of the ellipse (x - x_hat)^T A (x - x_hat) <= 1 
-    
-    Parameters
-    ----------
-    A_half_inv: (2, 2) `np.array`
-        The inverse of the Cholesky decomposition of A
-    x_hat: (2, 1) `np.array`
-        Center of the ellipsoid
-
-    Returns
-    -------
-    zz: (2, N) `np.array`
-        N points on the border of the ellipsoid
-    """
-    theta = np.linspace(0, 2 * np.pi, 100)
-    zz = np.vstack([np.cos(theta), np.sin(theta)])
-    zz = A_half_inv.T.dot(zz) + x_hat
-    return zz
-
-
-def verif_cross(a, b, A_half_inv, x_hat):
-    """ Does a^t x = b  cross (x - x_hat)^T A (x - x_hat) <= 1 ? """
-    a_prime = A_half_inv.dot(a)
-    b_prime = b - a.T.dot(x_hat)
-    return bool(np.abs(b_prime) < np.linalg.norm(a_prime))
-
-
-def shur_complement(A, idx):
-    """ 
-    Take the Schur Complement of A[idx, idx]
-    
-    Parameters
-    ----------
-    A: (d, d) `np.array`
-    idxs: `List(int)`
-        Indices of the columns w.r.t which we compute the complement
-
-    Returns
-    -------
-    A_schur: (len(idx), len(idx)) `np.array`
-        The Schur complement
-    """
-    assert type(idx) in [list, np.ndarray], "idxs must be a list or np.array"
-    N = A.shape[0]
-    select = np.array([idx])
-    # select must be a (1, N) np.array
-    assert select.shape == (1, len(idx)), "idxs must be a list of indices"
-    non_select = np.array([[f for f in range(N) if f not in select]])
-    J = A[select.T, select]
-    L = A[select.T, non_select]
-    K = A[non_select.T, non_select]
-    # Take the schur complement
-    A_shur = J - L.dot(np.linalg.inv(K).dot(L.T))
-    return A_shur
-
-
-def abs_interval(interval):
-    """
-    Map an interval trough the abs function
-            \      /
-             \    /
-              \  /
-               \/
-            [----]
-    """
-    # The interval does not cross the origin
-    if interval[0] * interval[1] > 0:
-        interval = np.abs(interval)
-        return np.array([np.min(interval), np.max(interval)])
-    # The interval crosses the origin:
-    else:
-        return np.array([0, np.max(np.abs(interval))])
-
 
 
 class LinearRashomon(object):
@@ -95,8 +23,8 @@ class LinearRashomon(object):
 
     `(w - w_S)^T A (w - w_S) <= epsilon`
 
-    over which we can compute a consensus on local/global feature importance
-    statements.
+    over which we can compute a consensus on local/global 
+    feature importance statements.
 
 
     Attributes
@@ -170,10 +98,9 @@ class LinearRashomon(object):
                                      self.regr.coef_.ravel())).reshape((-1, 1))
         X_tilde = np.column_stack( (np.ones(len(X_)), X_) )
         self.X_tilde = X_tilde
-        self.A = X_tilde.T.dot(X_tilde) / self.N
-        self.A_half = np.linalg.cholesky(self.A)
-        self.A_half_inv = np.linalg.inv(self.A_half)
-        self.A_inv = self.A_half_inv.T.dot(self.A_half_inv)
+        A = X_tilde.T.dot(X_tilde) / self.N
+        self.ellipsoid = Ellipsoid(A, self.w_hat)
+        self.A_inv = np.linalg.inv(A)
 
         return self
 
@@ -251,8 +178,7 @@ class LinearRashomon(object):
         
         # Compute min/max preds
         X_tilde = np.column_stack( (np.ones(len(X_)), X_) )
-        A_half_inv = self.A_half_inv * np.sqrt(epsilon)
-        minmax_preds = opt_lin_ellipsoid(X_tilde.T, A_half_inv, self.w_hat, return_input_sol=False)
+        minmax_preds = self.ellipsoid.opt_linear(X_tilde.T, epsilon)
         return self.y_std * y_ + self.y_mean, self.y_std * minmax_preds + self.y_mean
 
 
@@ -263,19 +189,7 @@ class LinearRashomon(object):
         return extreme_slopes[1:] * self.y_std / self.X_std.reshape((-1, 1))
 
 
-    def partial_dependence(self, x, idx, epsilon):
-        x_ = (x - self.X_mean[idx]) / self.X_std[idx]
-
-        # Compute min/max preds
-        a = np.zeros((self.n_features + 1, len(x)))
-        a[np.array(idx)+1] = x_.T
-        A_half_inv = self.A_half_inv * np.sqrt(epsilon)
-        minmax_preds = opt_lin_ellipsoid(a, A_half_inv, self.w_hat, return_input_sol=False)
-        return self.y_std * minmax_preds + self.y_mean
-
-
-    def feature_importance(self, epsilon, feature_names, idxs=None, threshold=0, top_bottom=True):
-        
+    def min_max_importance(self, idxs, epsilon):
         # Linear model : the min/max importances are the min/max weight magnitude
         if idxs is None:
             # Importance of the least square
@@ -308,17 +222,33 @@ class LinearRashomon(object):
                 else:
                     grouped_idx = np.array(grouped_idx)+1
                     # Project the ellipdoid
-                    A = shur_complement(self.A, grouped_idx)
-                    A_half = np.linalg.cholesky(A) / np.sqrt(epsilon)
-                    A_half_inv = np.linalg.inv(A_half)
+                    proj_ellipsoid = self.ellipsoid.projection(grouped_idx)
                     # Range of the FI across the Rashomon Set
-                    B = 1 / N * self.X_tilde[:, grouped_idx].T.dot(self.X_tilde[:, grouped_idx])
-                    B_prime = A_half_inv.dot(B.dot(A_half_inv.T))
-                    z_s = -1 * A_half.T.dot(self.w_hat[grouped_idx])
-                    min_val, _, max_val, _ = opt_qpqc_centered_exact(B_prime, z_s)
+                    Q = 1 / N * self.X_tilde[:, grouped_idx].T.dot(self.X_tilde[:, grouped_idx])
+                    Q_prime = epsilon * proj_ellipsoid.A_half_inv.dot(Q.dot(proj_ellipsoid.A_half_inv.T))
+                    z_s = -1 * proj_ellipsoid.A_half.T.dot(self.w_hat[grouped_idx]) / np.sqrt(epsilon)
+                    # Solve the non-convex QPQC in centered form
+                    min_val, _, max_val, _ = opt_qpqc_centered_exact(Q_prime, z_s)
                     min_max_importance[i, 0] = self.y_std * np.sqrt(min_val)
                     min_max_importance[i, 1] = self.y_std * np.sqrt(max_val)
         
+        return w_hat_importance, min_max_importance
+
+
+    def partial_dependence(self, x, idx, epsilon):
+        x_ = (x - self.X_mean[idx]) / self.X_std[idx]
+
+        # Compute min/max preds
+        a = np.zeros((self.n_features + 1, len(x)))
+        a[np.array(idx)+1] = x_.T
+        minmax_preds = self.ellipsoid.opt_linear(a, epsilon)
+        return self.y_std * minmax_preds + self.y_mean
+
+
+    def feature_importance(self, epsilon, feature_names, idxs=None, threshold=0, top_bottom=True):
+        
+        # Compute min max of feature importance
+        w_hat_importance, min_max_importance = self.min_max_importance(idxs, epsilon)        
 
         # If there exists model that dont rely on this feature, we do not
         # plot it in the PO. We only plot features that are "necessary"
@@ -331,7 +261,6 @@ class LinearRashomon(object):
         
         # For linear models : incomparable features occur when a specific plane crosse the ellipsoid
         if idxs is None:
-            A_half_inv = self.A_half_inv * np.sqrt(epsilon)
 
             # Compare features by features to make partial order
             select_features_idx = [i for i in range(self.n_features) if i not in ambiguous]
@@ -343,10 +272,10 @@ class LinearRashomon(object):
                         # Cross line 1?
                         a[i+1, 0] = 1
                         a[j+1, 0] = 1
-                        cross_line_one = verif_cross(a, 0, A_half_inv, self.w_hat)
+                        cross_line_one = self.ellipsoid.verif_cross(a, 0, epsilon)
                         # Cross line 2?
                         a[j+1, 0] *= -1
-                        cross_line_two = verif_cross(a, 0, A_half_inv, self.w_hat)
+                        cross_line_two = self.ellipsoid.verif_cross(a, 0, epsilon)
                         
                         if not cross_line_one and not cross_line_two:
                             # Features are comparable
@@ -357,6 +286,8 @@ class LinearRashomon(object):
 
         # General additive models : relative feature importance requires solving a QPQC
         else:
+            N = self.X_tilde.shape[0]
+
             # Compare features by features to make partial order
             select_features_idx = [i for i in range(len(idxs)) if i not in ambiguous]
             adjacency = np.zeros((len(idxs), len(idxs)))
@@ -378,20 +309,18 @@ class LinearRashomon(object):
                             grouped_idx = np.concatenate((grouped_idx_1, grouped_idx_2))
                             
                             # Project the ellipsoid on the two feature basis functions
-                            A = shur_complement(self.A, grouped_idx)
-                            A_half = np.linalg.cholesky(A) / np.sqrt(epsilon)
-                            A_half_inv = np.linalg.inv(A_half)
+                            proj_ellipsoid = self.ellipsoid.projection(grouped_idx)
                             
                             # Generate the quadratic form
-                            B = np.zeros((len(grouped_idx), len(grouped_idx)))
-                            B[:len(grouped_idx_1), :len(grouped_idx_1)] = self.X_tilde[:, grouped_idx_1].T.dot(self.X_tilde[:, grouped_idx_1])
-                            B[-len(grouped_idx_2):, -len(grouped_idx_2):] = -self.X_tilde[:, grouped_idx_2].T.dot(self.X_tilde[:, grouped_idx_2])
-                            B /= N
-                            B_prime = A_half_inv.dot(B.dot(A_half_inv.T))
-                            z_s = -1 * A_half.T.dot(self.w_hat[grouped_idx])
+                            Q = np.zeros((len(grouped_idx), len(grouped_idx)))
+                            Q[:len(grouped_idx_1), :len(grouped_idx_1)] = self.X_tilde[:, grouped_idx_1].T.dot(self.X_tilde[:, grouped_idx_1])
+                            Q[-len(grouped_idx_2):, -len(grouped_idx_2):] = -self.X_tilde[:, grouped_idx_2].T.dot(self.X_tilde[:, grouped_idx_2])
+                            Q /= N
+                            Q_prime = epsilon * proj_ellipsoid.A_half_inv.dot(Q.dot(proj_ellipsoid.A_half_inv.T))
+                            z_s = -1 * proj_ellipsoid.A_half.T.dot(self.w_hat[grouped_idx]) / np.sqrt(epsilon)
 
-                            # Solve the non-convex QPQC
-                            min_val, _, max_val, _ = opt_qpqc_centered_exact(B_prime, z_s)
+                            # Solve the non-convex QPQC in centered form
+                            min_val, _, max_val, _ = opt_qpqc_centered_exact(Q_prime, z_s)
                             
                             if np.sign(min_val) == np.sign(max_val):
                                 # Features are comparable
@@ -453,7 +382,7 @@ class LinearRashomon(object):
         ### Range of the Gap across the Rashomon Set ###
         x_instance_tilde = np.vstack( (np.zeros((1, N)), x_instances.T) ) * self.y_std
         gap_lstsq = x_instance_tilde.T.dot(self.w_hat)[:, 0]
-        minmax_gap = opt_lin_ellipsoid(x_instance_tilde, self.A_half_inv, self.w_hat)
+        minmax_gap = self.ellipsoid.opt_linear(x_instance_tilde)
         gap_eps = (gap_lstsq / (minmax_gap[:, 1] - gap_lstsq)) ** 2
 
         # Features to which to attribute a change in model output
@@ -472,7 +401,7 @@ class LinearRashomon(object):
             # Min-Max
             a = np.zeros((self.n_features+1, N))
             a[np.array(idxs[j]) + 1, :] = self.y_std * x_instances[:, idxs_j].T
-            minmax_attribs[:, j, :] = opt_lin_ellipsoid(a, self.A_half_inv, self.w_hat)
+            minmax_attribs[:, j, :] = self.ellipsoid.opt_linear(a)
         lstsq_attrib = self.y_std * lstsq_attrib
         minmax_attribs_lambda = lambda eps: np.sqrt(eps)*(minmax_attribs - lstsq_attrib[:, :, np.newaxis]) \
                                                 + lstsq_attrib[:, :, np.newaxis]
@@ -505,7 +434,7 @@ class LinearRashomon(object):
                     a[:, idxs_j+1] = -np.sign(lstsq_attrib[:, [j]]) * x_instances[:, idxs_j]
                     
                     # Min-max difference in importance
-                    min_max_ij_diff = opt_lin_ellipsoid(a.T, self.A_half_inv, self.w_hat)
+                    min_max_ij_diff = self.ellipsoid.opt_linear(a.T)
                     min_max_ij_diff *= self.y_std
                     step = min_max_ij_diff[:, 1] - lstsq_ij_diff
                     # Critical epsilon for comparing relative importance
@@ -522,9 +451,8 @@ class LinearRashomon(object):
 
     def plot_rashomon_set(self, feature1, feature2, epsilon, x_instance=None, importance=False):
         # Project the ellipsoid on two components
-        A = shur_complement(self.A, [feature1+1, feature2+1])
-        A_half_inv = np.linalg.inv(np.linalg.cholesky(A)) * np.sqrt(epsilon)
-        zz = get_ellipse_border(A_half_inv, self.w_hat[[feature1+1, feature2+1]])
+        proj_ellipsoid = self.ellipsoid.projection([feature1+1, feature2+1])
+        zz = proj_ellipsoid.get_ellipse_border(epsilon)
         # Plot feature attribution
         if x_instance is not None:
             scale = (x_instance - self.X_mean) / self.X_std * self.y_std
