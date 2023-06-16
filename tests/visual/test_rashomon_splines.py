@@ -1,6 +1,5 @@
 """
-Study the Rashomon Set of Spline Regression on a
-toy 2D problem. This is used for validating the
+Study the Rashomon Set of Spline Regression on a toy 2D problem. This is used for validating the
 `uxai.linear.LinearRashomon` class
 """
 
