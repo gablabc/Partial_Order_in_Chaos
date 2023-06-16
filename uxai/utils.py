@@ -34,6 +34,7 @@ def shur_complement(A, idx):
     A_shur = J - L.dot(np.linalg.inv(K).dot(L.T))
     return A_shur
 
+
 class Ellipsoid(object):
     """ 
     Representation of an ellipsoid
@@ -59,7 +60,7 @@ class Ellipsoid(object):
         Parameters
         ----------
         idxs: `List(int)`
-            Indices of the components on which we project
+            Indices of the components on which to project
 
         Returns
         -------
@@ -70,7 +71,7 @@ class Ellipsoid(object):
         return proj_ellipsoid
     
 
-    def slice(self, idxs):
+    def slice(self, idxs_bar):
         """ 
         Slice the Ellipsoid along a linear subspace x_i=0 i\in idxs
         
@@ -85,7 +86,7 @@ class Ellipsoid(object):
             The sliced ellipsoid
         """
         # Index to keep and remove
-        idxs_bar = [i for i in range(self.d) if not i in idxs]
+        idxs = [i for i in range(self.d) if not i in idxs_bar]
         idxs = np.array(idxs).reshape((-1, 1))
         idxs_bar = np.array(idxs_bar).reshape((-1, 1))
 
@@ -136,6 +137,7 @@ class Ellipsoid(object):
             return sol_values
         else:
             z_star = a_prime.dot(A_half_inv) / norm_a_prime # (N, d)
+            z_star[np.isnan(z_star)] = 0
             sol_inputs = np.array([-1, 1]).reshape((2, 1, 1)) * z_star + self.mu.T # (2, N, d)
             return sol_values, sol_inputs
         

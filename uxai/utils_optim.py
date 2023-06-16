@@ -8,32 +8,49 @@ from warnings import warn
 
 
 
-def opt_lin_ellipsoid_quadrant(a, ellipsoid_dict, monotocity, epsilon, constraint=True):
-    
-    minmax_preds, arg_minmax = ellipsoid_dict[()].opt_linear(a, epsilon, return_input_sol=True)
-    # Make sure that the optimum respect the monotocity contraints
-    if constraint and (arg_minmax * monotocity.reshape((1, 1, -1)) > 0).any():
-        # Min and Max
-        for i in [0, 1]:
-            mismatch = arg_minmax[i] * monotocity > 0
-            broken_consts, inverse_idx = np.unique(mismatch, axis=0, return_inverse=True)
-            # For each set of broken constraints we resolve the problem with
-            # a slice of the original ellipsoid
-            for j, broken_const in enumerate(broken_consts):
-                # Skip this trivial case
-                if np.sum(broken_const) == 0:
-                    continue
-                # Inputs that lead to an invalid constraint
-                where_invalid = np.where(inverse_idx == j)[0]
-                # Ellipsoid has already been sliced that way
-                if not tuple(broken_const) in ellipsoid_dict:
-                    ellipsoid_dict[tuple(broken_const)] = ellipsoid_dict[()].slice(broken_consts)
-                sliced_ellipsoid = ellipsoid_dict[tuple(broken_const)]
-                # Sliced obj
-                new_a = a[respect_const, where_invalid]
-                minmax_preds[where_invalid, i] = sliced_ellipsoid.opt_linear(new_a, epsilon)[:, i]
+def opt_lin_ellipsoid_quadrant(a, ellipsoid_dict, monotocity, epsilon):
+    minmax_preds = np.zeros((a.shape[1], 2))
+    # Min and Max
+    for i in [0, 1]:
+        opt_lin_ellipsoid_quadrant_recurse(i, minmax_preds, a, np.arange(a.shape[1]), 
+                                            (), ellipsoid_dict, monotocity, epsilon)
     return minmax_preds
 
+
+def opt_lin_ellipsoid_quadrant_recurse(i, minmax_preds, a,
+                                       instance_idx, constr_idx, 
+                                       ellipsoid_dict, monotocity, epsilon):
+    # What components are free to optimize
+    free_comp = np.array([i for i in range(a.shape[0]) if i not in constr_idx])
+    a_tmp = a[free_comp, :]
+    monotocity_tmp = monotocity[free_comp]
+
+    # Optimize on the current ellipsoid
+    minmax_preds_tmp, arg_minmax_tmp = \
+                ellipsoid_dict[constr_idx].opt_linear(a_tmp, epsilon, return_input_sol=True)
+    mismatch = arg_minmax_tmp[i] * monotocity_tmp > 0
+
+    # Observe which constraints are broken
+    broken_consts, inverse_idx = np.unique(mismatch, axis=0, return_inverse=True)
+    # For each set of broken constraints we resolve the problem with
+    # a slice of the original ellipsoid
+    for j, broken_const in enumerate(broken_consts):
+        # Intances that lead to an invalid constraint
+        where_instance = np.where(inverse_idx == j)[0]
+        # Save results that respect all constraints
+        if np.sum(broken_const) == 0:
+            minmax_preds[instance_idx[where_instance], i] = \
+                        minmax_preds_tmp[where_instance, i]
+        else:
+            # A tuple of indices of broken constraints
+            broken_const = tuple(sorted(list(constr_idx) + list(free_comp[np.where(broken_const)[0]])))
+            # Ellipsoid has already been sliced that way
+            if not broken_const in ellipsoid_dict:
+                ellipsoid_dict[broken_const] = ellipsoid_dict[()].slice(broken_const)
+            
+            opt_lin_ellipsoid_quadrant_recurse(i, minmax_preds, a[:, where_instance],
+                                            instance_idx[where_instance], broken_const, 
+                                            ellipsoid_dict, monotocity, epsilon)
 
 
 def qpqc(W, alpha_hat):
