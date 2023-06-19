@@ -6,21 +6,10 @@ import os
 from scipy.stats import spearmanr
 from sklearn.preprocessing import SplineTransformer, FunctionTransformer
 from sklearn.compose import ColumnTransformer
-from sklearn.tree import DecisionTreeRegressor
 
 # Local imports
 from data_utils import DATASET_MAPPING
-from utils import setup_pyplot_font
-
-
-def main_effect_score(X, y):
-    """ Regress the target on one feature and look at the R^2 """
-    d = X.shape[1]
-    scores = np.zeros(d)
-    model = DecisionTreeRegressor(max_depth=3)
-    for i in range(d):
-        scores[i] = model.fit(X[:, [i]], y).score(X[:, [i]], y)
-    return scores
+from utils import setup_pyplot_font, get_complex_features
 
 
 
@@ -68,20 +57,13 @@ if __name__ == "__main__":
 
     # Get data
     X, y, features = DATASET_MAPPING["kaggle_houses"]()
-    correl, _ = spearmanr(X)
-    np.savetxt(os.path.join("datasets", "kaggle_houses", "houses_correl.csv"), correl, delimiter=",")
+    # correl, _ = spearmanr(X)
+    # np.savetxt(os.path.join("datasets", "kaggle_houses", "houses_correl.csv"), correl, delimiter=",")
 
     all_scatter_plots(X, y, features)
-    scores = main_effect_score(X, y)
-    for i in np.argsort(scores)[::-1]:
-        print(f"{features.names[i]} : {scores[i]:.3f}")
-
-    
-    # Spline preprocessing on these features with high R^2
-    complex_feature_idx = [1, 2, 5, 10] 
-    simple_feature_idx = [i for i in range(X.shape[1]) if i not in complex_feature_idx]
+    complex_feature_idx, simple_feature_idx = get_complex_features(X, y, 5, features)
     n_knots = 4
-    degree = 2
+    degree = 3
     dim = n_knots + degree - 2
     encoder = ColumnTransformer([
                                 ('identity', FunctionTransformer(), simple_feature_idx),

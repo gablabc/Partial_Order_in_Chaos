@@ -10,6 +10,7 @@ from sklearn.model_selection import KFold, ShuffleSplit
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
+from sklearn.tree import DecisionTreeRegressor
 
 # Local imports
 from data_utils import DATASET_MAPPING, TASK_MAPPING
@@ -23,6 +24,36 @@ def setup_pyplot_font(size=11):
     rc('text', usetex=True)
     from matplotlib import rcParams
     rcParams["text.latex.preamble"] = r"\usepackage{bm}\usepackage{amsfonts}"
+
+
+############################## Additive Models ################################
+
+def main_effect_score(X, y):
+    """ Regress the target on one feature and look at the R^2 """
+    d = X.shape[1]
+    scores = np.zeros(d)
+    model = DecisionTreeRegressor(max_depth=3)
+    for i in range(d):
+        scores[i] = model.fit(X[:, [i]], y).score(X[:, [i]], y)
+    return scores
+
+
+def get_complex_features(X, y, k, features):
+    scores = main_effect_score(X, y)
+    complex_feature_idx = []
+    for i in np.argsort(scores)[::-1]:
+        # Dont consider features with few unique values (usually counts 0-4)
+        if len(np.unique(X[:, i])) > 5:
+            print(f"{features.names[i]} : {scores[i]:.3f}")
+            if k > 0:
+                complex_feature_idx.append(i)
+                k -= 1
+    print(f"fitting Splines on {[features.names[i] for i in complex_feature_idx]}")
+    
+    # Spline preprocessing on these features with high R^2
+    simple_feature_idx = [i for i in range(X.shape[1]) if i not in complex_feature_idx]
+    return complex_feature_idx, simple_feature_idx
+
 
 
 ############################## General Utilities ##############################

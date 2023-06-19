@@ -68,7 +68,7 @@ def get_data_compas():
 
 
 
-def get_data_houses():
+def get_data_houses(remove_correlations=False):
     # https://www.kaggle.com/c/house-prices-advanced-regression-techniques/data?select=train.csv
     df = pd.read_csv(
         os.path.join(
@@ -96,22 +96,34 @@ def get_data_houses():
     # shuffle the data
     df = df.sample(frac=1, random_state=42)
 
+    #### Missing Data ####
     # Replace missing values by the mean
     imp = SimpleImputer(missing_values=np.nan, strategy="mean")
-
     df["MasVnrArea"] = imp.fit_transform(df[["MasVnrArea"]])
     df["GarageYrBlt"] = imp.fit_transform(df[["GarageYrBlt"]])
-
-    # Dropping LotFrontage because it is missing 259/1460 values which is a lot (GarageYrBlt: 81 and MasVnrArea: 8 is reasonable)
+    # Dropping LotFrontage because it is missing 259/1460 values 
+    # which is a lot (GarageYrBlt: 81 and MasVnrArea: 8 is reasonable)
     df.drop(labels=["LotFrontage"], axis=1, inplace=True)
 
-    # High correlation
-    df.drop(labels=["GarageCars"], axis=1, inplace=True)
+    #### Features which are mostly zero ####
+    # 1408 houses have MiscVal=0
+    df.drop(columns=["MiscVal"], inplace=True)
+    # 1453 houses have Pool=0
+    df.drop(columns=["PoolArea"], inplace=True)
+    # 1436 houses have 3SsnPorch=0
+    df.drop(columns=["3SsnPorch"], inplace=True)
+    # 1420 houses have LowQualFinSF=0
+    df.drop(columns=["LowQualFinSF"], inplace=True)
 
-    # Dropping GarageYrBlt because it is highly correlated (0.84791) with YearBuilt.
-    df.drop(columns=["GarageYrBlt"], inplace=True)
+    ### Ignore HalfBathrooms ####
+    df.drop(columns=["BsmtHalfBath", "HalfBath"], inplace=True)
 
+    #### Ignore time-related features ####
+    # We mainly care about the PHYSICAL properties of the houses
+    df.drop(columns=["YearRemodAdd", "YrSold", "YearBuilt"], inplace=True)
+    df.drop(columns=["GarageYrBlt", "MoSold"], inplace=True)
 
+    #### Multiple Features regarding the Basement are multi-colinear ####
     # Add the ratio of completion of the basement as a feature
     assert (df["TotalBsmtSF"] == df["BsmtUnfSF"] + df["BsmtFinSF1"] + df["BsmtFinSF2"]).all()
     has_basement = df["TotalBsmtSF"]>0
@@ -123,79 +135,93 @@ def get_data_houses():
     df.drop(columns=["BsmtFinSF1"], inplace=True)
     df.drop(columns=["BsmtFinSF2"], inplace=True)
 
-    # High correlation >0.6 with BsmtPercFin
-    df.drop(columns=["BsmtFullBath"], inplace=True)
-
-    # GrLivArea: Above grade (ground) living area square feet and TotRmsAbvGrd: Total rooms above
-    # grade (does not include bathrooms) are highly correlated (0.827874)
-    df.drop(columns=["TotRmsAbvGrd"], inplace=True)
-
-    # All features under 0.1: BsmtFinSF2, LowQualFinSF, BsmtHalfBath, 3SsnPorch, PoolArea, MiscVal, MoSold, YrSold
-    # Almost no values == (almost all values have a value of 0)
-
-    # BsmtHalfBath has a really low correlation (2nd lowest) with the target (-0.0121889), almost no values
-    df.drop(columns=["BsmtHalfBath"], inplace=True)
-
-    # MoSold low correlation with target -0.0298991, I
-    # removed year because it was the lowest correlation of all features with the target
-    df.drop(columns=["MoSold"], inplace=True)
-
-    # LowQualFinSF: Low quality finished square feet (all floors), almost no values
-    df.drop(columns=["LowQualFinSF"], inplace=True)
-
-    # MiscVal almost no values
-    df.drop(columns=["MiscVal"], inplace=True)
-
-    # Pool area almost no values
-    df.drop(columns=["PoolArea"], inplace=True)
-
-    # 3SsnPorch almost no values
-    df.drop(columns=["3SsnPorch"], inplace=True)
-
-    # Low Model Reliance
-    df.drop(columns=["FullBath"], inplace=True)
-    df.drop(columns=["HalfBath"], inplace=True)
-
-    # Too similar to first and second floor areas
+    #### Almost Perfect multi-colinearity GrLivArea=1st + 2nd floors ####
+    assert np.isclose(df["GrLivArea"], df["1stFlrSF"] + df["2ndFlrSF"]).mean() > 0.95
     df.drop(columns=["GrLivArea"], inplace=True)
+    
+    # Remove correlated/redundant features
+    if remove_correlations:
+        #### High Spearman Correlation ####
+        # correlation of 0.85 with GarageArea
+        df.drop(labels=["GarageCars"], axis=1, inplace=True)
 
-    # Solve the weird issue with YearBuild and YearRemodAdd
-    bool_idx = df["YearRemodAdd"]==1950
-    df.loc[bool_idx, "YearRemodAdd"] = df.loc[bool_idx, "YearBuilt"]
-    df.drop(columns=["YearBuilt"], inplace=True)
+        # High correlation >0.6 with BsmtPercFin
+        df.drop(columns=["BsmtFullBath"], inplace=True)
 
-    # In the end remove any feature that represent time
-    df.drop(columns=["YearRemodAdd", "YrSold"], inplace=True)
+        # GrLivArea: Above grade (ground) living area square feet and TotRmsAbvGrd: Total rooms above
+        # grade (does not include bathrooms) are highly correlated (0.827874)
+        df.drop(columns=["TotRmsAbvGr"], inplace=True)
+
+    # # Solve the weird issue with YearBuild and YearRemodAdd
+    # bool_idx = df["YearRemodAdd"]==1950
+    # df.loc[bool_idx, "YearRemodAdd"] = df.loc[bool_idx, "YearBuilt"]
+    # df.drop(columns=["YearBuilt"], inplace=True)
 
     # Remove outliers
     df = df[df["SalePrice"] < 500000]
     df = df[df["SalePrice"] > 50000]
 
-    # Rename a feature
-    feature_names = list(df.columns[:-1])
-    #feature_names[4] = "YearRenovation"
+    # Determine the ordering of the features
+    if remove_correlations:
+        feature_names = \
+            ['LotArea', 'OverallQual', 'OverallCond', 'MasVnrArea',
+            'BsmtPercFin', '1stFlrSF', '2ndFlrSF',
+            'BedroomAbvGr', 'TotRmsAbvGr', 'KitchenAbvGr', 
+            'Fireplaces', 'GarageArea',
+            'WoodDeckSF', 'OpenPorchSF', 'EnclosedPorch', 'ScreenPorch']
+        
+        # Generate Features object
+        feature_types = [
+            "percent",
+            "sparse_num",
+            "num_int",
+            "num_int",
+            "sparse_num",
+            "sparse_num",
+            "sparse_num",
+            "num_int",
+            "num_int",
+            "num_int",
+            "sparse_num",
+            "sparse_num",
+            "sparse_num",
+            "sparse_num",
+            "sparse_num",
+        ]
 
+    else:
+        feature_names = \
+            ['LotArea', 'OverallQual', 'OverallCond', 'MasVnrArea',
+            'BsmtPercFin', '1stFlrSF', '2ndFlrSF', 'FullBath', 
+            'BsmtFullBath', 'BedroomAbvGr', 'TotRmsAbvGr', 'KitchenAbvGr', 
+            'Fireplaces', 'GarageArea', 'GarageCars',
+            'WoodDeckSF', 'OpenPorchSF', 'EnclosedPorch', 'ScreenPorch']
+
+        feature_types = [
+            "sparse_num",
+            "num_int",
+            "num_int",
+            "sparse_num",
+            "percent",
+            "sparse_num",
+            "sparse_num",
+            "num_int",
+            "num_int",
+            "num_int",
+            "num_int",
+            "num_int",
+            "num_int",
+            "sparse_num",
+            "num_int",
+            "sparse_num",
+            "sparse_num",
+            "sparse_num",
+            "sparse_num",
+        ]
+        
+    df = df[feature_names+['SalePrice']]
     X = df.to_numpy()[:, :-1]
     y = df.to_numpy()[:, [-1]]
-
-    # Generate Features object
-    feature_types = [
-        "percent",
-        "sparse_num",
-        "num_int",
-        "num_int",
-        "sparse_num",
-        "sparse_num",
-        "sparse_num",
-        "num_int",
-        "num_int",
-        "num_int",
-        "sparse_num",
-        "sparse_num",
-        "sparse_num",
-        "sparse_num",
-        "sparse_num",
-    ]
 
     features = Features(X, feature_names, feature_types)
 
