@@ -3,6 +3,8 @@ General utility functions for experiments
 
 """
 
+import os
+import pandas as pd
 import numpy as np
 from dataclasses import dataclass
 from sklearn.model_selection import train_test_split
@@ -32,7 +34,7 @@ def main_effect_score(X, y):
     """ Regress the target on one feature and look at the R^2 """
     d = X.shape[1]
     scores = np.zeros(d)
-    model = DecisionTreeRegressor(max_depth=3)
+    model = DecisionTreeRegressor(max_depth=3, random_state=42)
     for i in range(d):
         scores[i] = model.fit(X[:, [i]], y).score(X[:, [i]], y)
     return scores
@@ -43,7 +45,8 @@ def get_complex_features(X, y, k, features):
     complex_feature_idx = []
     for i in np.argsort(scores)[::-1]:
         # Dont consider features with few unique values (usually counts 0-4)
-        if len(np.unique(X[:, i])) > 5:
+        # Nor features with many zero values since some quantiles would overlap
+        if len(np.unique(X[:, i])) > 5 and np.mean(X[:, i]==0) < 0.05:
             print(f"{features.names[i]} : {scores[i]:.3f}")
             if k > 0:
                 complex_feature_idx.append(i)
@@ -54,6 +57,14 @@ def get_complex_features(X, y, k, features):
     simple_feature_idx = [i for i in range(X.shape[1]) if i not in complex_feature_idx]
     return complex_feature_idx, simple_feature_idx
 
+
+def kaggle_submission(model, remove_correlations):
+    X, _, _, Id = DATASET_MAPPING["kaggle_houses"](remove_correlations, submission=True)
+    preds = np.exp(model.predict(X))
+    output = pd.DataFrame({'Id': Id,
+                       'SalePrice': preds.squeeze()})
+    filename = f"submission_remove_corr_{remove_correlations}.csv"
+    output.to_csv(os.path.join("models", "Kaggle-Houses", filename), index=False)
 
 
 ############################## General Utilities ##############################

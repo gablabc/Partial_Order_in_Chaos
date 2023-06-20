@@ -68,13 +68,22 @@ def get_data_compas():
 
 
 
-def get_data_houses(remove_correlations=False):
+def get_data_houses(remove_correlations=False, submission=False):
     # https://www.kaggle.com/c/house-prices-advanced-regression-techniques/data?select=train.csv
-    df = pd.read_csv(
-        os.path.join(
-            os.path.dirname(__file__), "datasets", "kaggle_houses", "train.csv"
+    
+    if submission:
+        df = pd.read_csv(
+            os.path.join(
+                os.path.dirname(__file__), "datasets", "kaggle_houses", "test.csv"
+            )
         )
-    )
+    else:
+        df = pd.read_csv(
+            os.path.join(
+                os.path.dirname(__file__), "datasets", "kaggle_houses", "train.csv"
+            )
+        )
+    Id = df["Id"]
 
     # dropping categorical features
     df.drop(
@@ -93,19 +102,17 @@ def get_data_houses(remove_correlations=False):
         inplace=True,
     )
 
-    # shuffle the data
-    df = df.sample(frac=1, random_state=42)
-
     #### Missing Data ####
-    # Replace missing values by the mean
-    imp = SimpleImputer(missing_values=np.nan, strategy="mean")
-    df["MasVnrArea"] = imp.fit_transform(df[["MasVnrArea"]])
-    df["GarageYrBlt"] = imp.fit_transform(df[["GarageYrBlt"]])
+    # Replace missing values by the median
+    columns_with_nan = df.columns[np.where(df.isna().any())[0]]
+    if columns_with_nan is not None:
+        imp = SimpleImputer(missing_values=np.nan, strategy="mean")
+        df[columns_with_nan] = imp.fit_transform(df[columns_with_nan])
+
+    #### Features which are mostly zero ####
     # Dropping LotFrontage because it is missing 259/1460 values 
     # which is a lot (GarageYrBlt: 81 and MasVnrArea: 8 is reasonable)
     df.drop(labels=["LotFrontage"], axis=1, inplace=True)
-
-    #### Features which are mostly zero ####
     # 1408 houses have MiscVal=0
     df.drop(columns=["MiscVal"], inplace=True)
     # 1453 houses have Pool=0
@@ -142,41 +149,42 @@ def get_data_houses(remove_correlations=False):
     # Remove correlated/redundant features
     if remove_correlations:
         #### High Spearman Correlation ####
-        # correlation of 0.85 with GarageArea
+        # High correlation of 0.85 with GarageArea
         df.drop(labels=["GarageCars"], axis=1, inplace=True)
 
         # High correlation >0.6 with BsmtPercFin
         df.drop(columns=["BsmtFullBath"], inplace=True)
 
-        # GrLivArea: Above grade (ground) living area square feet and TotRmsAbvGrd: Total rooms above
-        # grade (does not include bathrooms) are highly correlated (0.827874)
+        # High correlation >0.6 with BedroomAbvGrd
         df.drop(columns=["TotRmsAbvGr"], inplace=True)
+
+        # High correlation ~0.6 with OverallQual
+        df.drop(columns=["FullBath"], inplace=True)
 
     # # Solve the weird issue with YearBuild and YearRemodAdd
     # bool_idx = df["YearRemodAdd"]==1950
     # df.loc[bool_idx, "YearRemodAdd"] = df.loc[bool_idx, "YearBuilt"]
     # df.drop(columns=["YearBuilt"], inplace=True)
 
-    # Remove outliers
-    df = df[df["SalePrice"] < 500000]
-    df = df[df["SalePrice"] > 50000]
+    # Process the target (careful here)
+    # df = df[df["SalePrice"] < 500000]
+    # df = df[df["SalePrice"] > 50000]
+    # df['SalePrice'] = np.log1p(df['SalePrice'])
 
     # Determine the ordering of the features
     if remove_correlations:
         feature_names = \
             ['LotArea', 'OverallQual', 'OverallCond', 'MasVnrArea',
             'BsmtPercFin', '1stFlrSF', '2ndFlrSF',
-            'BedroomAbvGr', 'TotRmsAbvGr', 'KitchenAbvGr', 
-            'Fireplaces', 'GarageArea',
+            'BedroomAbvGr',  'KitchenAbvGr', 'Fireplaces', 'GarageArea',
             'WoodDeckSF', 'OpenPorchSF', 'EnclosedPorch', 'ScreenPorch']
-        
-        # Generate Features object
+
         feature_types = [
+            "sparse_num",
+            "num_int",
+            "num_int",
+            "sparse_num",
             "percent",
-            "sparse_num",
-            "num_int",
-            "num_int",
-            "sparse_num",
             "sparse_num",
             "sparse_num",
             "num_int",
@@ -218,14 +226,18 @@ def get_data_houses(remove_correlations=False):
             "sparse_num",
             "sparse_num",
         ]
-        
-    df = df[feature_names+['SalePrice']]
-    X = df.to_numpy()[:, :-1]
-    y = df.to_numpy()[:, [-1]]
-
+    
+    if submission:
+        df = df[feature_names]
+        X = df.to_numpy()
+        y = None
+    else:
+        df = df[feature_names+['SalePrice']]
+        X = df.to_numpy()[:, :-1]
+        y = np.log(df.to_numpy()[:, [-1]])
+    
     features = Features(X, feature_names, feature_types)
-
-    return X, y, features
+    return X, y, features, Id
 
 
 

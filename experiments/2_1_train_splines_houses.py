@@ -1,4 +1,4 @@
-""" Train Degree 1, 2, and 3 Splines on the Kaggle Housing dataset """
+""" Train Additive Splines on the Kaggle Housing dataset """
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,9 +6,10 @@ from scipy.stats import norm
 from sklearn.preprocessing import SplineTransformer, FunctionTransformer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import KFold, GridSearchCV, cross_val_score
 
 # Local imports
-from utils import custom_train_test_split, setup_pyplot_font
+from utils import setup_pyplot_font, get_complex_features, kaggle_submission
 from data_utils import DATASET_MAPPING
 
 import sys, os
@@ -20,76 +21,107 @@ if __name__ == "__main__":
 
     setup_pyplot_font(20)
 
-    ##### Fit Linear Model #####
-    X, y, features = DATASET_MAPPING["kaggle_houses"]()
-    x_train, x_test, y_train, y_test = custom_train_test_split(X, y, 'regression')
+    # Hyperparameter search space
+    n_knots_space = [3, 4, 5]
+    knots_space = ['quantile', 'uniform']
+    degree_space = [1, 2, 3]
 
-    # Spline preprocessing on these features with high R^2
-    complex_feature_idx = [1, 2, 5, 10]
-    simple_feature_idx = [i for i in range(X.shape[1]) if i not in complex_feature_idx]
-    n_knots = 4
-    degrees = [1, 2, 3]
-    train_errors = []
-    train_RMSE = []
-    train_RMSE_CI = []
-    test_errors = []
-    test_RMSE = []
-    test_RMSE_CI = []
-    for degree in degrees:
-        # Fit the model
-        encoder = ColumnTransformer([
-                                    ('identity', FunctionTransformer(), simple_feature_idx),
-                                    ('spline', SplineTransformer(n_knots=n_knots, degree=degree, 
-                                                include_bias=False, knots='quantile'), complex_feature_idx)
-                                    ])
-        rashomon_set = LinearRashomon()
-        model = Pipeline([('encoder', encoder), ('predictor', rashomon_set)])
-        model.fit(x_train, y_train)
+    # Repeat the experiments with and without correlated features
+    for remove_correlations in [False, True]:
+        print(f"\n\n\n\n######## Remove Correlations ? : {remove_correlations} ############\n\n")
+
+        # Collect the number of parameters
+        n_params = []
+        # Collect the CV RMSE
+        cv_rmse = []
+        # Keep the optimal model
+        optimal_model = None
+        optimal_cv_rmse = 1e10
+
+        ##### Get the data #####
+        X, y, features, _ = DATASET_MAPPING["kaggle_houses"](remove_correlations)
+        print(X.shape)
+        print(y.std())
+        kfold = KFold()
+
+        # Fit a Linear Regression as a reference
+        cv_baseline_score = -1 * cross_val_score(LinearRashomon(),
+                                X, y, scoring="neg_root_mean_squared_error", cv=kfold).mean()
+        
+        # Iterate over the number of features k on which we fit splines
+        for top_k in [1, 2, 3, 4, 5]:
+
+            # Spline preprocessing on these features with high R^2
+            complex_feature_idx, simple_feature_idx = get_complex_features(X, y, top_k, features)
+
+            # Initialize the model
+            encoder = ColumnTransformer([
+                                        ('identity', FunctionTransformer(), simple_feature_idx),
+                                        ('spline', SplineTransformer(n_knots=4, degree=3, 
+                                                    include_bias=False, knots='quantile'), complex_feature_idx)
+                                        ])
+            rashomon_set = LinearRashomon()
+            model = Pipeline([('encoder', encoder), ('predictor', rashomon_set)])
+
+            # Hyperparameter search space
+            search = GridSearchCV(
+                model,
+                cv=KFold(),
+                scoring='neg_root_mean_squared_error',
+                param_grid={"encoder__spline__n_knots": n_knots_space,
+                            "encoder__spline__knots": knots_space,
+                            "encoder__spline__degree": degree_space},
+            )
+            search.fit(X, y)
+
+            # Recover the optimal CV model
+            model = search.best_estimator_
+            res = search.cv_results_
+            curr_cv_rmse = np.nan_to_num(-res['mean_test_score'], nan=1e10)
+            if np.min(curr_cv_rmse) < optimal_cv_rmse:
+                optimal_model = model
+                optimal_cv_rmse = np.min(curr_cv_rmse)
+
+            # Results of CV
+            cv_rmse.append(curr_cv_rmse)
+            n_params.append(res['param_encoder__spline__n_knots'].data.astype(np.float64) + \
+                            res['param_encoder__spline__degree'].data.astype(np.float64) - 2)
+            n_params[-1] = top_k * n_params[-1] + 1 + len(features) - top_k
+
+        # Aggregate results
+        cv_rmse = np.concatenate(cv_rmse)
+        n_params = np.concatenate(n_params)
+        min_params = np.min(n_params)
+        max_params = np.max(n_params)
+
+        # Plot the results of hyper-parameter optimization
+        best_idx = np.argmin(cv_rmse)
+    
+        plt.figure()
+        plt.scatter(n_params, cv_rmse, c='b', alpha=0.75)
+        plt.plot(n_params[best_idx], optimal_cv_rmse, 'r*', markersize=10, markeredgecolor='k')
+        plt.plot([min_params-2, max_params+2], cv_baseline_score * np.ones(2), 'k--')
+        plt.xlim(min_params-2, max_params+2)
+        plt.ylim(0.13, y.std())
+        plt.xlabel("Number of free Parameters")
+        plt.ylabel("Cross-Validated RMSE")
+        plt.savefig(os.path.join("Images", "Kaggle-Houses", f"cv_remove_correls_{remove_correlations}.pdf"), bbox_inches='tight')
+        plt.show()
 
 
         # Train errors
-        train_preds = model.predict(x_train)
-        train_errors.append( (train_preds - y_train) ** 2 )
-        train_RMSE.append( np.sqrt(np.mean(train_errors[-1])) )
+        train_preds = optimal_model.predict(X)
+        train_errors = (train_preds - y) ** 2
+        train_RMSE = np.sqrt(np.mean(train_errors))
         # Delta method to compute the CI
-        N = x_train.shape[0]
-        train_RMSE_CI.append( norm.ppf(1-0.025) * np.std(train_errors[-1]) / (2 * train_RMSE[-1] * np.sqrt(N)) )
+        N = X.shape[0]
+        train_RMSE_CI = norm.ppf(1-0.025) * np.std(train_errors) / (2 * train_RMSE* np.sqrt(N))
+        print("Train RMSE ", train_RMSE, " +/- ", train_RMSE_CI)
+        print(f"Number of parameters {n_params[best_idx]}")
 
+        # Submit on Kaggle to get the test performance
+        kaggle_submission(model, remove_correlations)
 
-        # Test errors
-        test_preds = model.predict(x_test)
-        test_errors.append( (test_preds - y_test) ** 2 )
-        test_RMSE.append( np.sqrt(np.mean(test_errors[-1])) )
-        # Delta method to compute the CI
-        N = x_test.shape[0]
-        test_RMSE_CI.append( norm.ppf(1-0.025) * np.std(test_errors[-1]) / (2 * test_RMSE[-1] * np.sqrt(N)) )
-        
         # Pickle the model
         from joblib import dump
-        dump(model, os.path.join("models", "Kaggle-Houses", f"splines_degree_{degree}.joblib"))
-
-
-    print(train_RMSE)
-    print(test_RMSE)
-    
-    # Examine the performance
-    for i, degree in enumerate(degrees):
-
-        # Bar chart of RMSE
-        ind = np.arange(3)  # the x locations for the groups
-        width = 0.3  # the width of the bars
-
-        fig, ax = plt.subplots()
-        rects1 = ax.bar(ind - width/2, train_RMSE, width, yerr=train_RMSE_CI,
-                        label='Train', capsize=10)
-        rects2 = ax.bar(ind + width/2, test_RMSE, width, yerr=test_RMSE_CI, 
-                        label='Test', capsize=10)
-
-        # Add some text for labels, title and custom x-axis tick labels, etc.
-        ax.set_ylabel('RMSE')
-        ax.set_xlabel('Polynomial Degree')
-        ax.set_xticks(ind)
-        ax.set_xticklabels(degrees)
-        ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        ax.legend(framealpha=1)
-        plt.savefig(os.path.join("Images", "Kaggle-Houses", f"performance.pdf"), bbox_inches='tight')
+        dump(optimal_model, os.path.join("models", "Kaggle-Houses", f"splines_remove_correls_{remove_correlations}.joblib"))
