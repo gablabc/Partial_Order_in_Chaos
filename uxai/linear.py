@@ -5,6 +5,7 @@ Rashomon Sets of Linear/Additive models. Piece-Wise Linear Monotic Additive mode
 import numpy as np
 from scipy.linalg import lstsq
 import matplotlib.pyplot as plt
+from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import SplineTransformer
@@ -13,7 +14,7 @@ from .utils import Ellipsoid, abs_interval, intervaled_cumsum
 from .partial_orders import PartialOrder, RashomonPartialOrders
 
 
-class LinearRashomon(object):
+class LinearRashomon(BaseEstimator, RegressorMixin):
     """
     Rashomon Set for ordinary least squares Linear Regression.
 
@@ -39,9 +40,9 @@ class LinearRashomon(object):
         Root-Mean-Squared-Error of `w_hat`
 
     """
-    def __init__(self, **kwargs):
+    def __init__(self):
         # We wrap the class around the sklearn one
-        self.regr = LinearRegression(**kwargs)
+        self.regr = LinearRegression()
 
 
     def fit(self, X, y):

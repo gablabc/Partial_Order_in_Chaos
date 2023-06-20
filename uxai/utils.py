@@ -35,6 +35,10 @@ def shur_complement(A, idx):
     return A_shur
 
 
+def identity(x):
+    """ Dummy function for ellipsoid radius """
+    return x
+
 class Ellipsoid(object):
     """ 
     Representation of an ellipsoid
@@ -47,7 +51,7 @@ class Ellipsoid(object):
         self.A_half = np.linalg.cholesky(self.A)
         self.A_half_inv = np.linalg.inv(self.A_half)
         if size_fun is None:
-            size_fun = lambda eps: eps
+            size_fun = identity
         else:
             assert callable(size_fun), "Size_fun must be a callable"
         self.size_fun = size_fun
