@@ -13,6 +13,7 @@ from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
 from sklearn.tree import DecisionTreeRegressor
+from joblib import load
 
 # Local imports
 from data_utils import DATASET_MAPPING, TASK_MAPPING
@@ -65,6 +66,17 @@ def kaggle_submission(model, remove_correlations):
                        'SalePrice': preds.squeeze()})
     filename = f"submission_remove_corr_{remove_correlations}.csv"
     output.to_csv(os.path.join("models", "Kaggle-Houses", filename), index=False)
+
+
+def load_spline_model(remove_correlations):
+    # Load the model and spline parameters
+    model = load(os.path.join("models", "Kaggle-Houses", f"splines_remove_correls_{remove_correlations}.joblib"))
+    simple_feature_idx = model.steps[0][1].transformers_[0][2]
+    complex_feature_idx = model.steps[0][1].transformers_[1][2]
+    degree = model.get_params()["encoder__spline__degree"]
+    n_knots = model.get_params()["encoder__spline__n_knots"]
+
+    return model, simple_feature_idx, complex_feature_idx, degree, n_knots
 
 
 ############################## General Utilities ##############################

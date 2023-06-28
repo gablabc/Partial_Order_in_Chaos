@@ -324,8 +324,8 @@ class RashomonPartialOrders(object):
         """
         N = len(self.gap_crit_eps)
         n_features = self.pos_crit_eps.shape[1]
-        utility = []
-        for epsilon in epsilon_space:
+        cardinality = np.zeros((N, len(epsilon_space)))
+        for i, epsilon in enumerate(epsilon_space):
             # For which instances can we define a gap?
             defined_gaps = np.where(self.gap_crit_eps > epsilon)[0]
             # Positive/Negative attribution
@@ -334,15 +334,15 @@ class RashomonPartialOrders(object):
             # Adjacency
             adjacency = self.adjacency_crit_eps[defined_gaps] > epsilon
             # Count the number positive/negative attribution statements
-            count = np.sum(pos_neg)
+            count = np.sum(pos_neg, 1)
             # Count the number of relative importance statements
-            for i in range(n_features):
-                for j in range(n_features):
-                    count += np.sum(adjacency[pos_neg[:, i] & pos_neg[:, j], i, j])
-            count = count / ( N * n_features * (n_features + 1) / 2 )
-            utility.append(count)
+            for j in range(n_features):
+                for k in range(n_features):
+                    both_sign = pos_neg[:, j] & pos_neg[:, k]
+                    count[both_sign] += adjacency[both_sign, j, k]
+            cardinality[defined_gaps, i] = count
 
-        return utility
+        return cardinality / (n_features * (n_features + 1) / 2 )
 
 
 
