@@ -1,7 +1,7 @@
 """ Implementation of optimization routines """
 
 import numpy as np
-from scipy.optimize import bisect
+from scipy.optimize import bisect, linprog
 from scipy.linalg import eigh
 import trustregion
 from warnings import warn
@@ -253,3 +253,87 @@ def opt_qpqc_standard_approx(A, b):
     max_val = 0.5 * argmax.T.dot(A.dot(argmax)) + b.T.dot(argmax)
 
     return float(min_val), float(max_val)
+
+
+
+
+def solve_bilinear(phis, z_0):
+    """ 
+    Approximately Solve a Bilinear Problem (BP)
+    of the form
+    
+    `max_{beta, z} beta^T phis z`
+    
+    where z and beta are restricted to polytopes.
+    The algorithm is coordinate-ascent and is
+    guaranteed to converge to a local maximum.
+
+    Parameters
+    ----------
+    phis: (N, M) `np.array`
+        Element ij is the Shapley value phi(t_j, x^(i))
+    z_0: (m,) `np.array`
+        Initital guess for z
+
+    Returns
+    -------
+    z_new: (m) `np.array`
+        Array solution representing the index of the trees
+    """
+    N = phis.shape[0]
+    m = len(z_0)
+    # Store two consecutive betas
+    beta_0 = np.zeros(N)
+    beta_1 = np.sign(phis[:, z_0].sum(-1))
+    ite = 0
+    # Coordinate-Ascent
+    while not (beta_0 == beta_1).all():
+        beta_0 = beta_1
+        z_new = np.argpartition(-beta_0.dot(phis), kth=m)[:m]
+        beta_1 = np.sign(phis[:, z_new].sum(-1))
+        obj = np.sum(np.abs(phis[:, z_new].sum(-1)))
+        ite += 1
+        if ite > 20:
+            break
+    return obj, z_new
+
+
+
+def solve_lp(phis, m):
+    """ 
+    Solve
+    
+    `max_{h\in H_{m:}} \sum_j |phi_i(h, x^(j))|`
+    
+    via a relaxation as a Linear Program (LP).
+
+    Parameters
+    ----------
+    phis: (N, M) `np.array`
+        Element ij is the Shapley value phi(t_j, x^(i))
+    m: `int`
+        Number of trees to keep
+
+    Returns
+    -------
+    z_new: (m) `np.array`
+        Array solution representing the index of the trees
+    """
+    N, M = phis.shape
+    # Number of variables over which to optimize
+    N_var = M + N
+    # Setup the LP
+    c = np.concatenate( (np.zeros(M), np.ones(N)) )
+    bounds = [(0, 1)] * M + [(0, np.inf)] * N
+    A_eq = np.zeros((1, N_var))
+    A_eq[0, :M] = 1
+    b_eq = [m]
+    A_ub = np.zeros((2*N, N_var))
+    A_ub[:N, :M] = phis
+    A_ub[N:, :M] = -phis
+    A_ub[:N, M:] = -1 * np.eye(N)
+    A_ub[N:, M:] = -1 * np.eye(N)
+    b_ub = np.zeros(2*N)
+    res = linprog(c=c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds)
+    assert res.success
+    return res.fun, res.x[:M]
