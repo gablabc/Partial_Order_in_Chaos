@@ -308,14 +308,6 @@ def get_data_adults():
     df = df[['age', 'educational-num', 'capital-gain', 'capital-loss',
              'hours-per-week', 'gender', 'workclass','education', 'marital-status', 
              'occupation', 'relationship', 'race', 'income']]
-
-
-    # df = df.rename(columns={'educational-num': 'educational_num',
-    #                         'marital-status': 'marital_status', 
-    #                         'hours-per-week': 'hours_per_week', 
-    #                         'capital-gain': 'capital_gain', 
-    #                         'capital-loss': 'capital_loss'})
-
     df = shuffle(df, random_state=42)
     feature_names = df.columns[:-1]
     
@@ -330,7 +322,6 @@ def get_data_adults():
     # Generate Features object
     feature_types = ["num", "num", "sparse_num", "sparse_num", "num", ["ordinal", "Female", "Male"]]+\
         [(["nominal"] + list(l)) for l in encoder.transformers_[1][1].categories_[1:]]
-    
     features = Features(X, feature_names, feature_types)
     
     return X, y, features

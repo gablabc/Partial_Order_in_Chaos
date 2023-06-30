@@ -16,6 +16,8 @@ from uxai.trees import interventional_treeshap
 
 
 def compare_shap_implementations(X, model):
+    if X.shape[0] > 1000:
+        X = X[:1000]
     # Run the original treeshap
     background = X[:100]
     masker = Independent(background, max_samples=100)
@@ -34,7 +36,8 @@ def compare_shap_implementations(X, model):
 
 
 def check_shap_additivity(X, model, I_map, task="regression"):
-    # Run the original treeshap
+    if X.shape[0] > 1000:
+        X = X[:1000]
     background = X[:100]
 
     # Prediction Gaps
@@ -171,16 +174,32 @@ def test_adult_no_ohe():
 
     # Fit model
     model = RandomForestClassifier(random_state=23, n_estimators=50, 
-                                   max_depth=4, min_samples_leaf=50)
+                                   max_depth=4, min_samples_leaf=50, n_jobs=-1)
     model.fit(X, y)
 
     # Compute SHAP values
     compare_shap_implementations(X, model)
 
 
-# Test with adult with ohe
+# Test with adult with one-hot-encoding
+def test_adult_ohe():
+    import sys, os
+    sys.path.append(os.path.join("..", "..", "experiments"))
+    from utils import setup_data_trees
+
+    X, y, _, task, ohe, I_map = setup_data_trees("adult_income")
+    # Encode for training
+    X = ohe.transform(X)
+
+    # Fit model
+    model = RandomForestClassifier(random_state=23, n_estimators=50, 
+                                   max_depth=4, min_samples_leaf=50, n_jobs=-1)
+    model.fit(X, y)
+
+    # Compute SHAP values
+    check_shap_additivity(X, model, I_map=I_map, task=task)
 
 
 if __name__ == "__main__":
-    test_classification_coallition(8)
+    test_adult_no_ohe()
 

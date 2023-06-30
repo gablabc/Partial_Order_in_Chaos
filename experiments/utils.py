@@ -79,6 +79,38 @@ def load_spline_model(remove_correlations):
     return model, simple_feature_idx, complex_feature_idx, degree, n_knots
 
 
+################################ Tree Models ##################################
+
+
+def setup_data_trees(name):
+    X, y, features = DATASET_MAPPING[name]()
+    task = TASK_MAPPING[name]
+    
+    # If there are any nominal features, use ohe
+    if len(features.nominal) > 0:
+        # One Hot Encoding
+        ohe = ColumnTransformer([
+                              ('id', FunctionTransformer(), features.non_nominal),
+                              ('ohe', OneHotEncoder(sparse=False), features.nominal)])
+        ohe.fit(X)
+        # Generate the mapping I from column to feature
+        # We assume that all numerical features come first
+        I_map = list(range(len(features.non_nominal)))
+        counter = len(features.non_nominal)
+        for idx in features.nominal:
+            # Associate the feature to its encoding columns
+            for _ in features.maps[idx].cats:
+                I_map.append(counter)
+            counter += 1
+        I_map = np.array(I_map, dtype=np.int32)
+
+    else:
+        ohe = None
+        I_map = None
+        
+    return X, y, features, task, ohe, I_map
+
+
 ############################## General Utilities ##############################
 
 # Custom train/test split for reproducability (random_state is always 42 !!!)
@@ -117,23 +149,6 @@ def get_cross_validator(k, task, split_seed, split_type):
             raise ValueError("Wrong type of cross-validator")
     
     return cross_validator
-
-
-
-def setup_data_trees(name):
-    X, y, features = DATASET_MAPPING[name]()
-    task = TASK_MAPPING[name]
-    
-    if len(features.nominal) > 0:
-        # One Hot Encoding
-        ohe = ColumnTransformer([
-                              ('id', FunctionTransformer(), features.non_nominal),
-                              ('ohe', OneHotEncoder(sparse=False), features.nominal)])
-        ohe.fit(X)
-    else:
-        ohe = None
-        
-    return X, y, features, task, ohe
 
 
 
