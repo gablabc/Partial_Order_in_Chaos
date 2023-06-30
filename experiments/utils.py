@@ -162,7 +162,7 @@ class Data_Config:
 @dataclass
 class Search_Config:
     n_splits: int = 5  # Number of train/valid splits
-    split_type: str = "Shuffle" # Type of cross-valid "Shuffle" "K-fold"
+    split_type: str = "K-Fold" # Type of cross-valid "Shuffle" "K-Fold"
     split_seed: int = 1 # Seed for the train/valid splits reproducability
 
 

@@ -8,15 +8,11 @@ from matplotlib import rc
 rc('font',**{'family':'sans-serif', 'sans-serif':['Computer Modern Sans Serif'], 'size':15})
 rc('text', usetex=True)
 from joblib import dump
+import os
 
 # Local
 from utils import Data_Config, Search_Config, setup_data_trees
 from utils import get_cross_validator, custom_train_test_split
-
-import sys, os
-sys.path.append(os.path.join('../'))
-from uxai.trees import all_tree_preds, epsilon_upper_bound
-
 
 
 if __name__ == "__main__":
@@ -26,14 +22,13 @@ if __name__ == "__main__":
     
     # Parse arguments
     parser = ArgumentParser()
-    parser.add_arguments(Data_Config, "data")
     parser.add_arguments(Search_Config, "search")
     
     
     args, unknown = parser.parse_known_args()
     print(args)
 
-    X, y, features, task, ohe = setup_data_trees("adult_income")
+    X, y, features, task, ohe, _ = setup_data_trees("adult_income")
     # Encode for training
     X = ohe.transform(X)
     X_train, X_test, y_train, y_test = custom_train_test_split(X, y, task)
@@ -44,7 +39,7 @@ if __name__ == "__main__":
         "max_depth": list(range(2, 20)),
         "min_samples_leaf": list(range(1, 50, 2)),
         "n_estimators": list(range(50, 500, 50)),
-        "max_features": ['auto', 'log2', None],
+        "max_features": ['sqrt', 'log2', None],
         "max_samples": [0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
     }
     
@@ -54,7 +49,7 @@ if __name__ == "__main__":
                                           args.search.split_type)
     
     # Init model
-    model = RandomForestClassifier(n_jobs=-1)
+    model = RandomForestClassifier(n_jobs=-1, random_state=42)
     
     n_repetitions = 100
     cv_search = RandomizedSearchCV(model, hp_grid, scoring="accuracy",
@@ -64,51 +59,14 @@ if __name__ == "__main__":
     best_hp = cv_search.best_params_
     print(best_hp)
 
-    # Increase the size of the Tree Set
-    for M in [10, 100, 1000]:
-        model = RandomForestClassifier(**best_hp)
+    # Train M=1000 trees with five different seeds
+    model = RandomForestClassifier(**best_hp)
 
-        ms = []
-        epsilons_upper = []
-        confidences = []
-        # Repeat training 5 times for variability considerations
-        for seed in range(5):
-            print(f"M : {M} \nseed : {seed}\n")
-            model.set_params(random_state=int(seed), n_estimators=M)
-            model.fit(X_train, y_train.ravel())
+    # Repeat training 5 times for variability considerations
+    for seed in range(5):
+        print(f"\nseed : {seed}\n")
+        model.set_params(random_state=int(seed), n_estimators=1000)
+        model.fit(X_train, y_train.ravel())
 
-            # Save the model
-            dump(model, os.path.join("models", "Adult-Income", f"RF_M_{M}_seed_{seed}.joblib"))
-
-            # Get the predictions of all trees on the test set
-            tree_preds = all_tree_preds(X_test, model, task="classification")
-            # Get the upper bound epsilon^+(m) on the error over H_{m:}
-            m, epsilon_upper = epsilon_upper_bound(tree_preds, y_test.reshape((-1, 1)), task="classification")
-
-            true_score = 1 - model.score(X_test, y_test)
-            N = X_test.shape[0]
-            confidence = 1 - np.exp(-0.5 * N * (epsilon_upper - true_score) ** 2)
-
-            ms.append(m)
-            epsilons_upper.append(epsilon_upper)
-            confidences.append(confidence)
-        
-        ms = np.array(ms)
-        epsilons_upper = np.array(epsilons_upper)
-        confidences = np.array(confidences)
-
-        plt.figure()
-        for i in range(len(ms)):
-            plt.plot(ms[1], epsilons_upper[i], label=i)
-        plt.xlabel("m")
-        plt.ylabel(r"$\epsilon$")
-        plt.legend()
-        plt.savefig(os.path.join("Images", "Adult-Income", f"RF_epsilon+_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
-
-
-        plt.figure()
-        for i in range(len(ms)):
-            plt.plot(ms[1], confidences[i], label=i)
-        plt.xlabel("m")
-        plt.ylabel("Confidence")
-        plt.savefig(os.path.join("Images", "Adult-Income", f"RF_confidence_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
+        # Save the model
+        dump(model, os.path.join("models", "Adult-Income", f"RF_M_1000_seed_{seed}.joblib"))
