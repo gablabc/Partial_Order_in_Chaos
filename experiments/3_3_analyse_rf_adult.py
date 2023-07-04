@@ -1,17 +1,16 @@
 # %%
 """ Interactive code to analyse results of RFs on Adult-Income """
 import numpy as np
-import pandas as pd
 from joblib import load
 import matplotlib.pyplot as plt
-import seaborn as sns
+from tqdm import tqdm
 
 # Local imports
 from utils import custom_train_test_split, setup_pyplot_font, setup_data_trees
 
 import sys, os
 sys.path.append(os.path.join('../'))
-from uxai.trees import all_tree_preds, epsilon_upper_bound
+from uxai.trees import RandomForestRashomon
 from uxai.plots import bar
 
 setup_pyplot_font(20)
@@ -20,92 +19,126 @@ setup_pyplot_font(20)
 # ## Load Data
 # %%
 
-X, y, features, task, ohe = setup_data_trees("adult_income")
+X, y, features, task, ohe, _ = setup_data_trees("adult_income")
 X_train, X_test, y_train, y_test = custom_train_test_split(X, y, task)
-M = 1000
 N = X_test.shape[0]
 
 # %%[markdown]
 # ## Plot Gap Errors
 # %%
 
-gap_errors = []
 all_B = [10, 25, 50, 100, 500]
+gap_errors = np.zeros((5, len(all_B)))
 for seed in range(5):
-    for B in all_B:
-        tmp_filename = f"GapErrors_M_{M}_seed_{seed}_background_{B}.npy"
-        gap_error_load = np.abs(np.load(os.path.join("models", "Adult-Income", tmp_filename)))
-        gap_errors.append(np.column_stack((gap_error_load, seed * np.ones(2000), B * np.ones(2000))))
-df = pd.DataFrame(np.vstack(gap_errors), columns=["Gap Errors", "Run", "Background Size"])
+    for i, B in enumerate(all_B):
+        tmp_filename = f"GapErrors_M_1000_seed_{seed}_background_{B}.npy"
+        file = os.path.join("models", "Adult-Income", tmp_filename)
+        gap_errors[seed, i] = np.abs(np.load(file)).mean()
 
+plt.errorbar(all_B, gap_errors.mean(0), yerr=2*gap_errors.std(0), barsabove=True)
+# plt.savefig(os.path.join("Images", "Adult-Income", f"RF_B_samples_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
+plt.show()
 
-# %%
-
-hue_order = list(range(5))
-sns.boxplot(x="Background Size", y="Gap Errors", hue="Run", data=df, width=0.6, 
-            order=all_B, hue_order=hue_order, showfliers=False)
-plt.legend('', frameon=False)
-plt.savefig(os.path.join("Images", "Adult-Income", f"RF_B_samples_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
-# plt.show()
-
-
-# %%
-best_m_idx = 0
-best_utility = 0
-best_error = 0
-best_seed = -1
-for seed in range(5):
-    model = load(os.path.join("models", "Adult-Income", f"RF_M_{M}_seed_{seed}.joblib"))
-
-    # The upper bound on preformance
-    tree_preds = all_tree_preds(ohe.transform(X_test), model, task="classification")
-    m, epsilon_upper = epsilon_upper_bound(tree_preds, y_test.reshape((-1, 1)), 
-                                            task="classification")
-
-    # Load the pre-computed SHAP feature attributions
-    tmp_filename = f"TreeSHAP_M_{M}_seed_{seed}_background_500.joblib"
-    rashomon_po = load(os.path.join("models", "Adult-Income", tmp_filename))
-    utility = rashomon_po.get_utility(epsilon_upper)
-    utility /= np.max(utility)
-    # true_score = 1 - model.score(ohe.transform(X_test), y_test)
-    # confidence = 1 - np.exp(-0.5 * N * (epsilon_upper - true_score) ** 2)
-    
-    curr_utility_idx = np.argmax(epsilon_upper <= 0.17)
-    if utility[curr_utility_idx] > best_utility:
-        best_m_idx = curr_utility_idx
-        best_utility = utility[curr_utility_idx]
-        best_error = epsilon_upper[curr_utility_idx]
-        best_seed = seed
-    plt.plot(utility, epsilon_upper)
-
-plt.plot(best_utility, best_error, 'r*', markersize=15, markeredgecolor='k')
-plt.xlabel("Utility")
-plt.xlim(0.35, 1)
-plt.ylim(0.135, 0.22)
-plt.ylabel(r"Test Error Bound $\epsilon^+$")
-plt.savefig(os.path.join("Images", "Adult-Income", f"RF_utility_M_{M}.pdf"), bbox_inches='tight', pad_inches=0)
-# plt.show()
-
-
-# %%
-# Select epsilon star and best seed
-model = load(os.path.join("models", "Adult-Income", f"RF_M_{M}_seed_{best_seed}.joblib"))
-
-# The upper bound on preformance
-tree_preds = all_tree_preds(ohe.transform(X_test), model, task="classification")
-m, epsilon_upper = epsilon_upper_bound(tree_preds, y_test.reshape((-1, 1)), 
-                                        task="classification")
-epsilon_star = epsilon_upper[best_m_idx]
-
-# Shap feature attribution
-tmp_filename = f"TreeSHAP_M_{M}_seed_{best_seed}_background_500.joblib"
-rashomon_po = load(os.path.join("models", "Adult-Income", tmp_filename))
 
 # %%[markdown]
-# ## Show local feature attributions
+# ## Upper Bound on Error versus m
 # %%
+# Extra tolerance to guarantee with 1% uncertainty that rashomon
+# set contains h*
+extra_tolerance = np.sqrt(-2*np.log(0.01)/N)
 
-preds = tree_preds.mean(1)
+# Save the rashomon sets for each seed
+rf_rashomon_sets = []
+
+# Check all seeds to see if methodology is stable
+plt.figure()
+for seed in tqdm(range(5)):
+    model = load(os.path.join("models", "Adult-Income", f"RF_M_1000_seed_{seed}.joblib"))
+    rf_rashomon = RandomForestRashomon(model, task="classification")
+    rf_rashomon.fit(ohe.transform(X_test), y_test.ravel())
+
+    if seed == 0:
+        epsilon = rf_rashomon.epsilon_upper[-1]+extra_tolerance
+        m_epsilon = rf_rashomon.get_m_epsilon(epsilon)
+        plt.plot(rf_rashomon.m, rf_rashomon.epsilon_upper, label=r"$\epsilon^+(m)$")
+        plt.plot([500, 1000], epsilon*np.ones(2), 'k--')
+        plt.text(510, epsilon+0.003, r"$\epsilon$" )
+        plt.plot([m_epsilon, m_epsilon], [rf_rashomon.epsilon_upper[-1], epsilon], "k--")
+        plt.text(m_epsilon+10, rf_rashomon.epsilon_upper[-1]+0.003, r"$m(\epsilon)$" )
+    else:
+        plt.plot(rf_rashomon.m, rf_rashomon.epsilon_upper)
+        
+    rf_rashomon_sets.append(rf_rashomon)
+
+plt.xlabel(r"$m$")
+plt.ylabel("Misclassification Rate")
+plt.xlim(500, 1000)
+plt.ylim(0.135, 0.23)
+plt.legend()
+plt.savefig(os.path.join("Images", "Adult-Income", f"RF_error_bound.pdf"), bbox_inches='tight', pad_inches=0)
+plt.show()
+
+# %%[markdown]
+# ## Cardinality versus error tolerance
+# %%
+plt.figure()
+selected_rashomon = None
+selected_rashomon_po = None
+selected_phis = None
+for seed in tqdm(range(5)):
+    # Get the rashomon set
+    rf_rashomon = rf_rashomon_sets[seed]
+
+    #Load the pre-computed SHAP feature attributions
+    tmp_filename = f"TreeSHAP_M_1000_seed_{seed}_background_500.npy"
+    phis = np.load(os.path.join("models", "Adult-Income", tmp_filename))
+
+    # Compute partial orders of LFA
+    rashomon_po = rf_rashomon.feature_attributions(phis, tau=0)
+    # Get cardinality of the partial orders
+    cardinalities = rashomon_po.get_utility(rf_rashomon.epsilon_upper)
+
+    # Next figures will be on seed 0
+    if seed == 0:
+        selected_rashomon = rf_rashomon
+        selected_rashomon_po = rashomon_po
+        selected_phis = phis
+
+    plt.plot(rf_rashomon.epsilon_upper, np.mean(cardinalities, 0))
+
+plt.plot(epsilon * np.ones(2), [0, 0.8], 'k--')
+plt.text(epsilon, 0.8, r'$\epsilon$', horizontalalignment='center')
+plt.xlim(0.135, 0.35)
+plt.ylim(0, 1)
+plt.xlabel("Missclassification Tolerance")
+plt.ylabel("Mean Cardinality")
+plt.savefig(os.path.join("Images", "Adult-Income", f"RF_cardinality.pdf"), bbox_inches='tight', pad_inches=0)
+plt.show()
+
+# %% Clear all un-used rashomon sets
+rf_rashomon_sets = None
+
+# %% 
+# Try to find some elbow in the cardinality curves
+from kneed import KneeLocator
+kneedle = KneeLocator(selected_rashomon.epsilon_upper[::-1], 
+                      np.mean(cardinalities, 0)[::-1], 
+                      S=1.0, curve="convex", 
+                      direction="decreasing")
+print(round(kneedle.knee, 3))
+kneedle.plot_knee_normalized()
+plt.show()
+
+# %%[markdown]
+## Local Feature Attributions
+# %%
+# Sign of the gap
+ratio_defined_gaps = np.mean(selected_rashomon_po.gap_crit_eps >= epsilon)
+print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the data")
+
+# %%
+# Explore instances will high/low predictions
+preds, minmax_preds = selected_rashomon.predict(ohe.transform(X_test[:2000]), epsilon)
 idx_no_capital = (X_test[:2000, 2]==0) & (X_test[:2000, 3]==0)
 conf_pos = np.where(idx_no_capital & (preds[:2000]>0.75))[0]
 conf_neg = np.where(idx_no_capital & (preds[:2000]<0.3) & (preds[:2000]>0.1))[0]
@@ -127,15 +160,6 @@ descriptions = ["A confident prediction of y=1 with no Capital Gain/Loss",
                 "Random", "Random", "Random", "Random", "Random", "Random",
                 "Random", "Random", "Random", "Random", "Random", "Random"]
 
-best_m = m[best_m_idx]
-cherry_picked_min =  np.partition( tree_preds, kth=best_m)[:, :best_m]
-cherry_picked_max = -np.partition(-tree_preds, kth=best_m)[:, :best_m]
-min_pred = cherry_picked_min.mean(1)
-max_pred = cherry_picked_max.mean(1)
-
-# The min-max attributions
-extreme_attribs = rashomon_po.minmax_attrib(epsilon_star)
-
 # %%
 for i, idx in enumerate(idxs):
     print(f"### Instance {idx} ###\n")
@@ -150,11 +174,15 @@ for i, idx in enumerate(idxs):
     print(f"True Outcome {y_test[idx, 0]:.3f}")
     print(f"Point Prediction {preds[idx]:.3f}")
     # Show min-max preds for RF
-    print(f"Min-Max Preds {min_pred[idx]:.3f}, {max_pred[idx]:.3f}")
+    print(f"Min-Max Preds {minmax_preds[idx, 0]:.3f}, {minmax_preds[idx, 1]:.3f}")
 
-    PO = rashomon_po.get_poset(idx, epsilon_star, x_map)
+    # The min-max attributions
+    extreme_attribs = selected_rashomon_po.minmax_attrib(epsilon)
+    # The partial order of local feature importance
+    PO = selected_rashomon_po.get_poset(idx, epsilon, x_map)
+    # If the gap is well defined
     if PO is not None:
-        dot = PO.print_hasse_diagram(show_ambiguous=False, top_ranks=4)
+        dot = PO.print_hasse_diagram(show_ambiguous=False, top_ranks=3)
         dot.render(filename=os.path.join('Images', 'Adult-Income', "PO", f"PO_instance_{idx}"), format='pdf')
 
         # Bar plot
@@ -168,4 +196,20 @@ for i, idx in enumerate(idxs):
 
     print("\n")
 
+# %%[markdown]
+# ## Global Feature Importance
+# %% Compute GFI
+minmax_GFI, PO = rf_rashomon.feature_importance(
+                    selected_phis[:500], 
+                    epsilon, features.names, 
+                    expand=True, threshold=0.001
+                )
+
+# %% Plot results
+widths = np.abs(PO.phi_mean - minmax_GFI.T) # (2, d)
+bar(PO.phi_mean, features.names, xerr=widths)
+plt.savefig(os.path.join('Images', 'Adult-Income', "PO", f"Global.pdf"), bbox_inches='tight')
+plt.show()
+
+PO.print_hasse_diagram(show_ambiguous=False)
 # %%

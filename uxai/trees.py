@@ -353,7 +353,7 @@ class RandomForestRashomon(object):
 
 
 
-    def feature_importance(self, phis, epsilon, feature_names, expand=True, threshold=0):
+    def feature_importance(self, phis, epsilon, feature_names, expand=False, threshold=0):
     
         N, d, _ = phis.shape
         m_epsilon = self.get_m_epsilon(epsilon)
@@ -370,6 +370,7 @@ class RandomForestRashomon(object):
                           np.arange(d).reshape((1, -1, 1)), 
                           attrib_max_idx].mean(-1)
 
+        assert (attrib_min <= attrib_max).all()
         # Create a collection of models with extreme attribs
         collection_idx = np.vstack((attrib_min_idx.reshape((N*d, -1)),
                                     attrib_max_idx.reshape((N*d, -1))))
@@ -379,7 +380,7 @@ class RandomForestRashomon(object):
         
         # Compute all LFA on all models in the collection (N_collect, d)
         GFI_collect = np.zeros((len(collection_idx), d))
-        for i, idxs in tqdm(enumerate(collection_idx)):
+        for i, idxs in tqdm(enumerate(collection_idx), desc="Optimizing LFA"):
             GFI_collect[i] = np.mean(np.abs(phis[..., idxs].mean(-1)), 0)
         
         # Expand the collection of models by approx-optimizing the GFIs
@@ -392,10 +393,12 @@ class RandomForestRashomon(object):
                 _, z_sol = solve_lp(phis[:, i, :], m_epsilon)
                 min_trees_idxs = np.where(z_sol==1)[0]
                 k = m_epsilon - len(min_trees_idxs)
+                # print(f"Choosing {k} trees out of fractional values")
                 if k > 0:
                     # There are fractionary solutions so we heuristically choose the 
                     # remaining trees in descending order of z
-                    fraction_tree = np.where((z_sol > 0) & (z_sol< 1))[0]
+                    fraction_tree = np.where((z_sol > 0) & (z_sol < 1))[0]
+                    # print(f"{100*(1-len(fraction_tree)/np.sum(z_sol > 0)):.2f}% of non-null z_s are one")
                     to_add = fraction_tree[np.argpartition(-z_sol[fraction_tree], kth=k)[:k]]
                     min_trees_idxs = np.concatenate((min_trees_idxs, to_add))
                 # Add argmin to collection
@@ -449,7 +452,7 @@ class RandomForestRashomon(object):
 
 
 
-    def feature_attributions(self, phis, tau=0.01, idxs=[], features=None):
+    def feature_attributions(self, phis, tau=0.01):
         """ 
         Compute a RashomonPartialOrders from the Local Feature Attributions (LFA)
         returned by the TreeSHAP methods.
@@ -458,12 +461,7 @@ class RandomForestRashomon(object):
         ----------
         phis: (n_samples, n_features, n_trees) `np.array`
             Precomputed Shap values for each instance, feature and tree.
-        idxs: List(List(int)), default=None
-            Features organized as groups when we want the LFA for a coallition of features.
-            For instance, to group the first three and last three features together, provide
-            `idxs=[[0, 1, 2], [3, 4, 5]]`. When `idxs=None`, each feature is its own coallition
-            and `idxs=[[0], [1], [2], [3], [4], [5]]` will be set automatically.
-
+        
         Returns
         -------
         PO : RashomonPartialOrders

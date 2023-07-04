@@ -303,7 +303,7 @@ def solve_lp(phis, m):
     """ 
     Solve
     
-    `max_{h\in H_{m:}} \sum_j |phi_i(h, x^(j))|`
+    `max_{h\in H_m} \sum_j |phi_i(h, x^(j))|`
     
     via a relaxation as a Linear Program (LP).
 
