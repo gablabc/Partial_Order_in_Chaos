@@ -226,8 +226,8 @@ class LinearRashomon(BaseEstimator, RegressorMixin):
                     proj_ellipsoid = self.ellipsoid.projection(grouped_idx)
                     # Range of the FI across the Rashomon Set
                     Q = 1 / N * self.X_tilde[:, grouped_idx].T.dot(self.X_tilde[:, grouped_idx])
-                    Q_prime = epsilon * proj_ellipsoid.A_half_inv.dot(Q.dot(proj_ellipsoid.A_half_inv.T))
-                    z_s = -1 * proj_ellipsoid.A_half.T.dot(self.w_hat[grouped_idx]) / np.sqrt(epsilon)
+                    Q_prime = epsilon * proj_ellipsoid.C_inv.dot(Q.dot(proj_ellipsoid.C_inv.T))
+                    z_s = -1 * proj_ellipsoid.C.T.dot(self.w_hat[grouped_idx]) / np.sqrt(epsilon)
                     # Solve the non-convex QPQC in centered form
                     min_val, _, max_val, _ = opt_qpqc_centered_exact(Q_prime, z_s)
                     min_max_importance[i, 0] = self.y_std * np.sqrt(min_val)
@@ -317,8 +317,8 @@ class LinearRashomon(BaseEstimator, RegressorMixin):
                             Q[:len(grouped_idx_1), :len(grouped_idx_1)] = self.X_tilde[:, grouped_idx_1].T.dot(self.X_tilde[:, grouped_idx_1])
                             Q[-len(grouped_idx_2):, -len(grouped_idx_2):] = -self.X_tilde[:, grouped_idx_2].T.dot(self.X_tilde[:, grouped_idx_2])
                             Q /= N
-                            Q_prime = epsilon * proj_ellipsoid.A_half_inv.dot(Q.dot(proj_ellipsoid.A_half_inv.T))
-                            z_s = -1 * proj_ellipsoid.A_half.T.dot(self.w_hat[grouped_idx]) / np.sqrt(epsilon)
+                            Q_prime = epsilon * proj_ellipsoid.C_inv.dot(Q.dot(proj_ellipsoid.C_inv.T))
+                            z_s = -1 * proj_ellipsoid.C.T.dot(self.w_hat[grouped_idx]) / np.sqrt(epsilon)
 
                             # Solve the non-convex QPQC in centered form
                             min_val, _, max_val, _ = opt_qpqc_centered_exact(Q_prime, z_s)
@@ -619,7 +619,7 @@ class MonotonicRashomon(object):
         if epsilon is None:
             return self.y_std * y_ + self.y_mean
         
-        minmax_preds = opt_lin_ellipsoid_quadrant(X_.T, self.ellipsoid_dict, self.monotocity, 
+        minmax_preds = opt_lin_ellipsoid_quadrant(X.T, self.ellipsoid_dict, self.monotocity, 
                                                   epsilon, constraint=constraint)
 
 

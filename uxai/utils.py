@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from functools import partial
+from warnings import warn
 
 from .features import embed
 
@@ -46,10 +47,31 @@ class Ellipsoid(object):
     """
     def __init__(self, A, mu, size_fun=None):
         self.d = A.shape[0]
-        self.A = A
         self.mu = mu
-        self.A_half = np.linalg.cholesky(self.A)
-        self.A_half_inv = np.linalg.inv(self.A_half)
+
+        self.A = A
+        regul_noise = 1e-10
+        noise_added = False
+        # Due to numerical errors and the presence of very similar 
+        # reference points r^(i) r^(j) in Kernel Ridge, it is 
+        # possible that the Ellipsoid matrix has null eigen-values. 
+        # In that case, progressively add noise on the diagonal of A until
+        # we can safely do a cholesky decomposition. This means
+        # that we are slightly underestimating the true Rashomon Set
+        while True:
+            try:
+                self.C = np.linalg.cholesky(self.A)
+                break
+            except:
+                noise_added = True
+                self.A = A + regul_noise * np.eye(self.R)
+                regul_noise *= 10
+
+        if noise_added:
+            warn("Rashomon Set is underestimated tn ensure numerical stability")
+        self.C = np.linalg.cholesky(self.A)
+        self.C_inv = np.linalg.inv(self.C)
+
         if size_fun is None:
             size_fun = identity
         else:
@@ -133,14 +155,14 @@ class Ellipsoid(object):
         size = self.size_fun(epsilon)
         if size <= 0:
             raise Exception("Empty Ellipsoid")
-        A_half_inv = self.A_half_inv * np.sqrt(size)
-        a_prime = A_half_inv.dot(a).T # (N, d)
+        C_inv = self.C_inv * np.sqrt(size)
+        a_prime = C_inv.dot(a).T # (N, d)
         norm_a_prime = np.linalg.norm(a_prime, axis=1, keepdims=True) # (N, 1)
         sol_values = np.array([-1, 1]) * norm_a_prime + a.T.dot(self.mu) # (N, 2)
         if not return_input_sol:
             return sol_values
         else:
-            z_star = a_prime.dot(A_half_inv) / norm_a_prime # (N, d)
+            z_star = a_prime.dot(C_inv) / norm_a_prime # (N, d)
             z_star[np.isnan(z_star)] = 0
             sol_inputs = np.array([-1, 1]).reshape((2, 1, 1)) * z_star + self.mu.T # (2, N, d)
             return sol_values, sol_inputs
@@ -167,7 +189,7 @@ class Ellipsoid(object):
         assert size > 0, "The ellipse is empty"
         theta = np.linspace(0, 2 * np.pi, 100)
         zz = np.vstack([np.cos(theta), np.sin(theta)])
-        zz = self.A_half_inv.T.dot(zz) * np.sqrt(size) + self.mu
+        zz = self.C_inv.T.dot(zz) * np.sqrt(size) + self.mu
         return zz
 
 
@@ -175,7 +197,7 @@ class Ellipsoid(object):
         """ Does a^t x = b  cross the ellipse ? """
         size = self.size_fun(epsilon)
         assert size > 0, "The ellipse is empty"
-        a_prime = self.A_half_inv.dot(a) * np.sqrt(size)
+        a_prime = self.C_inv.dot(a) * np.sqrt(size)
         b_prime = b - a.T.dot(self.mu)
         return bool(np.abs(b_prime) < np.linalg.norm(a_prime))
     
@@ -185,7 +207,7 @@ class Ellipsoid(object):
         assert size > 0, "The ellipse is empty"
         z = np.random.normal(0, 1, size=(N, self.d))
         z = z / np.linalg.norm(z, axis=1, keepdims=True)
-        w_boundary = z.dot(self.A_half_inv) * np.sqrt(size) + self.mu.T
+        w_boundary = z.dot(self.C_inv) * np.sqrt(size) + self.mu.T
         return w_boundary
 
 

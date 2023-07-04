@@ -2,13 +2,13 @@
 
 import numpy as np
 from scipy import linalg
+from scipy.linalg import eigh
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.metrics import mean_squared_error
-from warnings import warn
-from scipy.linalg import eigh
 
-from .utils_optim import opt_lin_ellipsoid, opt_qpqc_standard_exact, opt_qpqc_standard_approx
+from .utils import Ellipsoid
+from .utils_optim import opt_qpqc_standard_exact, opt_qpqc_standard_approx
 from .partial_orders import PartialOrder, RashomonPartialOrders
 
 
@@ -199,31 +199,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         # Add Rashomon-related parameters, this is not necessary when 
         # Fine-tuning the hyperparameters.
         if fit_rashomon:
-            # Define Rashomon Set
-            self.A = A
-            regul_noise = 1e-10
-            noise_added = False
-            # Due to numerical errors and the presence of very similar 
-            # reference points r^(i) r^(j), it is possible that the
-            # Ellipsoid matrix has null eigen-values. In that case,
-            # progressively add noise on the diagonal of A until
-            # we can safely do a cholesky decomposition. This means
-            # that we are slightly underestimating the true Rashomon Set
-            while True:
-                try:
-                    self.A_half = np.linalg.cholesky(self.A)
-                    break
-                except:
-                    noise_added = True
-                    self.A = A + regul_noise * np.eye(self.R)
-                    regul_noise *= 10
-
-            if noise_added:
-                warn("Rashomon Set is underestimated tn ensure numerical stability")
-
-            self.A_half = np.linalg.cholesky(self.A)
-            self.A_half_inv = np.linalg.inv(self.A_half)
-            self.A_inv = self.A_half_inv.T.dot(self.A_half_inv)
+            self.ellipsoid = Ellipsoid(A, self.alpha_s)
 
         return self
 
@@ -265,8 +241,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
             return preds + self.mu
         
         # Compute min/max preds
-        A_half_inv = self.A_half_inv * np.sqrt(epsilon)
-        minmax_preds = opt_lin_ellipsoid(K.T, A_half_inv, self.alpha_s)
+        minmax_preds = self.ellipsoid.opt_linear(K.T, epsilon)
         return preds + self.mu, minmax_preds + self.mu
 
 
@@ -354,7 +329,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         KX = self.get_kernel(X, self.Dict)
         K_diff = KX - Kz
         gap_lstsq = np.dot(K_diff, self.alpha_s).ravel()
-        minmax_gap = opt_lin_ellipsoid(K_diff.T, self.A_half_inv, self.alpha_s)
+        minmax_gap = self.ellipsoid.opt_linear(K_diff.T)
         gap_eps = (gap_lstsq / (minmax_gap[:, 1] - gap_lstsq)) ** 2
 
         ### Range of the Attributions across the Rashomon Set ###
@@ -367,7 +342,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
             lstsq_attrib[:, [j]] = np.dot(IG[:, j, :], self.alpha_s)
             # Min-Max
             a = IG[:, j, :].T # (R, N)
-            minmax_attribs[:, j, :] = opt_lin_ellipsoid(a, self.A_half_inv, self.alpha_s)
+            minmax_attribs[:, j, :] = self.ellipsoid.opt_linear(a)
         minmax_attribs_lambda = lambda eps: np.sqrt(eps)*(minmax_attribs - lstsq_attrib[:, :, np.newaxis]) \
                                                 + lstsq_attrib[:, :, np.newaxis]
 
@@ -396,7 +371,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
                         np.sign(lstsq_attrib[:, [j]]) * IG[:, j, :]
                     
                     # Min-max difference in importance
-                    min_max_ij_diff = opt_lin_ellipsoid(a.T, self.A_half_inv, self.alpha_s)
+                    min_max_ij_diff = self.ellipsoid.opt_linear(a.T)
                     step = min_max_ij_diff[:, 1] - lstsq_ij_diff
                     # Critical epsilon for comparing relative importance
                     ij_idx = lstsq_ij_diff < 0
@@ -561,7 +536,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
 
                         # Solve linear objective instead
                         if np.isclose(0, A).all():
-                            min_max_val = opt_lin_ellipsoid(b, self.A_half_inv, self.alpha_s, return_input_sol=False)
+                            min_max_val = self.ellipsoid.opt_linear(b, return_input_sol=False)
                             min_val = min_max_val[0, 0]
                             max_val = min_max_val[0, 1]
                         # Solve QPQC

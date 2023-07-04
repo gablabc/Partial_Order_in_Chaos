@@ -58,6 +58,25 @@ kr = kr.best_estimator_
 # Refit with Rashomon Parameters
 kr.fit(X[:train_size], y[:train_size], fit_rashomon=True)
 
+# %%
+# Assert Performance
+print(f"Train loss = {kr.MSE:.4f} + {kr.lambd} {kr.h_norm():.4f} = {kr.train_loss:.4f}")
+epsilon_rel = 0.05
+upper_bound_loss = (1 + epsilon_rel) * kr.train_loss
+print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.4f}")
+# Get the absolute epsilon
+abs_epsilon = kr.get_epsilon(epsilon_rel)
+
+# Sample points on the Boundary of the Rashomon set
+alpha_boundary = kr.ellipsoid.sample_boundary(100000, abs_epsilon).T # (R, Nsamples)
+
+# Ensure that all models have loss bellow epsilon
+K_inside = kr.get_kernel(kr.Dict)
+all_MSE = np.mean((y[:train_size].reshape((-1, 1)) - K_inside.dot(alpha_boundary) - kr.mu) ** 2, axis=0)
+all_h_norms = np.sum(alpha_boundary * K_inside.dot(alpha_boundary), axis=0)
+all_losses = all_MSE + kr.lambd * all_h_norms
+print(f"Ensemble : {np.min(all_losses):.4f}, {np.max(all_losses):.4f}")
+
 # %% Utility functions
 
 def plot_value_var(models, uncertainty=True, n_points=300):
@@ -67,7 +86,7 @@ def plot_value_var(models, uncertainty=True, n_points=300):
                          np.linspace(-1.8, 1.8, n))
     XX_ = np.column_stack((XX.ravel(), YY.ravel()))
 
-    preds, min_max_preds = models.predict(XX_, epsilon=0.05)
+    preds, min_max_preds = models.predict(XX_, epsilon=abs_epsilon)
 
     plt.figure()
     if uncertainty:
@@ -88,42 +107,21 @@ def plot_value_var(models, uncertainty=True, n_points=300):
 plot_value_var(kr)
 plot_value_var(kr, uncertainty=False)
 # plt.show()
-
-# %%
-# Assert Performance
-print(f"Train loss = {kr.MSE:.4f} + {kr.lambd} {kr.h_norm():.4f} = {kr.train_loss:.4f}")
-epsilon_rel = 0.05
-upper_bound_loss = (1 + epsilon_rel) * kr.train_loss
-print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.4f}")
-# Get the absolute epsilon
-abs_epsilon = kr.get_epsilon(epsilon_rel)
-
-# Sample points on the Boundary of the Rashomon set
-z = np.random.normal(0, 1, size=(100000, kr.R))
-z = z / np.linalg.norm(z, axis=1, keepdims=True)
-alpha_bound = z.dot(kr.A_half_inv).T * np.sqrt(abs_epsilon) + kr.alpha_s # (R, Nsamples)
-
-# Ensure that all models have loss bellow epsilon
-K_inside = kr.get_kernel(kr.Dict)
-all_MSE = np.mean((y[:train_size].reshape((-1, 1)) - K_inside.dot(alpha_bound) - kr.mu) ** 2, axis=0)
-all_h_norms = np.sum(alpha_bound * K_inside.dot(alpha_bound), axis=0)
-all_losses = all_MSE + kr.lambd * all_h_norms
-print(f"Ensemble : {np.min(all_losses):.4f}, {np.max(all_losses):.4f}")
-
 # %%
 
-## Global Feature Importance ##
-min_max_importance, global_PO = kr.feature_importance(X, y, abs_epsilon, 
-                                            feature_names=["x1", "x2"], idxs=None)
-print(min_max_importance)
+# ## Global Feature Importance ##
+# min_max_importance, global_PO = \
+#         kr.feature_importance(X, y, abs_epsilon,
+#                               feature_names=["x1", "x2"], idxs=None)
+# print(min_max_importance)
 
-# Bar chart
-width = np.abs(min_max_importance - global_PO.phi_mean.reshape((-1, 1)))
-bar(global_PO.phi_mean, ["x1", "x2"], xerr=width.T)
-plt.show()
+# # Bar chart
+# width = np.abs(min_max_importance - global_PO.phi_mean.reshape((-1, 1)))
+# bar(global_PO.phi_mean, ["x1", "x2"], xerr=width.T)
+# plt.show()
 
-dot = global_PO.print_hasse_diagram()
-dot.render(filename=os.path.join('Images', 'PO_Global_Kernel'), format='png')
+# dot = global_PO.print_hasse_diagram()
+# dot.render(filename=os.path.join('Images', 'PO_Global_Kernel'), format='png')
 
 # %%
 XX, YY = np.meshgrid(np.linspace(-2, 2, 10), 
@@ -136,8 +134,8 @@ grad_ = kr.gradients(XX_)
 plt.figure(figsize = (10, 10))
 
 for i in range(XX_.shape[0]):
-    for j in np.random.choice(alpha_bound.shape[1], size=(20)):
-        alpha = alpha_bound[:, [j]].T
+    for j in np.random.choice(alpha_boundary.shape[1], size=(20)):
+        alpha = alpha_boundary[:, [j]].T
         grad = np.sum(grad_[i,...]*alpha, axis=1)
         # normalize gradient
         norm = np.sqrt(grad[0] ** 2 + grad[1] ** 2) * 2
@@ -147,7 +145,7 @@ for i in range(XX_.shape[0]):
 plt.axis('equal')
 
 plt.scatter(X[:, 0], X[:, 1], zorder=-1)
-plt.show()
+# plt.show()
 
 # %%
 
@@ -173,7 +171,7 @@ rashomon_po = kr.feature_attributions(X_explain, z)
 
 # %%
 extreme_attribs = rashomon_po.minmax_attrib(abs_epsilon)
-ensemble_attribs = np.sum(kr.IG[...,np.newaxis] * alpha_bound.reshape((1, 1, kr.R, -1)), axis=2)
+ensemble_attribs = np.sum(kr.IG[...,np.newaxis] * alpha_boundary.reshape((1, 1, kr.R, -1)), axis=2)
 
 # %%
 for i in range(5):

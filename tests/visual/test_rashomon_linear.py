@@ -110,7 +110,7 @@ dot.render(filename=os.path.join('Images', 'PO_Lobal_Linear'), format='png')
 # Plot utility as a function of epsilon
 tolerance = RMSE + np.linspace(0, 0.5, 200)
 epsilon_space = linear_rashomon.get_epsilon(tolerance)
-utility = rashomon_po.get_utility(epsilon_space)
+utility = rashomon_po.get_utility(epsilon_space).mean(0)
 confidence = chi2(df=X.shape[0]).cdf(X.shape[0]*tolerance**2/noise**2)
 
 plt.figure()
