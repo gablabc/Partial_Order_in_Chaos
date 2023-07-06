@@ -16,6 +16,7 @@ from uxai.plots import bar
 
 setup_pyplot_font(20)
 
+# %%
 # Load dataset
 X, y, features, names = DATASET_MAPPING["compas"]()
 # Scale numerical features
@@ -40,27 +41,27 @@ image_path = os.path.join("Images", "COMPAS")
 
 # Assess Performance
 print(f"Train loss = {model.MSE:.4f} + {model.lambd} {model.h_norm():.4f} = {model.train_loss:.4f}")
-rel_epsilon = 0.02
+rel_epsilon = 0.01
 upper_bound_loss = (1 + rel_epsilon) * model.train_loss
 print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.4f}")
 # Get the absolute epsilon
 abs_epsilon = model.get_epsilon(rel_epsilon)
 
-# %%
+# # %%
 
-## Global Feature Importance ##
-min_max_importance, global_PO = model.feature_importance(X_test, y_test.reshape((-1, 1)), 
-                                    abs_epsilon, feature_names=features.names, idxs=None, threshold=-100)
+# ## Global Feature Importance ##
+# min_max_importance, global_PO = model.feature_importance(X_test, y_test.reshape((-1, 1)), 
+#                                     abs_epsilon, feature_names=features.names, idxs=None, threshold=-100)
 
-# %%
-# Bar chart
-width = np.abs(min_max_importance - global_PO.phi_mean.reshape((-1, 1)))
-bar(global_PO.phi_mean, features.names, xerr=width.T)
-plt.savefig(os.path.join(image_path, "PO", f"Global_Imp_{kernel}.pdf"), bbox_inches='tight')
+# # %%
+# # Bar chart
+# width = np.abs(min_max_importance - global_PO.phi_mean.reshape((-1, 1)))
+# bar(global_PO.phi_mean, features.names, xerr=width.T)
+# plt.savefig(os.path.join(image_path, "PO", f"Global_Imp_{kernel}.pdf"), bbox_inches='tight')
 
-# Hasse Diagram
-dot = global_PO.print_hasse_diagram(show_ambiguous=False)
-dot.render(filename=os.path.join(image_path, "PO", f"PO_Global_{kernel}"), format='pdf')
+# # Hasse Diagram
+# dot = global_PO.print_hasse_diagram(show_ambiguous=False)
+# dot.render(filename=os.path.join(image_path, "PO", f"PO_Global_{kernel}"), format='pdf')
 
 # %%
 def local_feature_attribution(name_x, name_z):
@@ -103,7 +104,7 @@ def local_feature_attribution(name_x, name_z):
 
 
     ### Resulting Local Feature Attributions ###
-    rashomon_po = model.feature_attributions(x, z, n=1000)
+    rashomon_po = model.feature_attributions(x, z, n=1000, threshold=0.02)
 
     # Extreme predictions
     _, min_max_preds = model.predict(x, epsilon=abs_epsilon)

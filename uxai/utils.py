@@ -64,7 +64,7 @@ class Ellipsoid(object):
                 break
             except:
                 noise_added = True
-                self.A = A + regul_noise * np.eye(self.R)
+                self.A = A + regul_noise * np.eye(self.d)
                 regul_noise *= 10
 
         if noise_added:

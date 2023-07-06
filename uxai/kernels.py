@@ -286,7 +286,7 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
 
 
 
-    def feature_attributions(self, X, z, n=100, top_bottom=True):
+    def feature_attributions(self, X, z, n=100, threshold=0, top_bottom=True):
         """ 
         Compute the Local Feature Attributions (LFA) for a set of samples `x_instances`.
         These LFAs are encoded as a RashomonPartialOrders object.
@@ -353,10 +353,10 @@ class KernelRashomon(RegressorMixin, BaseEstimator):
         neg_eps = np.zeros((N, d))
         for j in range(d):
             step = minmax_attribs[:, j, 1] - lstsq_attrib[:, j]
-            critical_eps = (lstsq_attrib[:, j] / step) ** 2
-            pos_idx = lstsq_attrib[:, j] > 0
+            critical_eps = ( (np.abs(lstsq_attrib[:, j])-threshold) / step ) ** 2
+            pos_idx = lstsq_attrib[:, j] > threshold
             pos_eps[pos_idx, j] = critical_eps[pos_idx]
-            neg_idx = lstsq_attrib[:, j] < 0
+            neg_idx = lstsq_attrib[:, j] < -threshold
             neg_eps[neg_idx, j] = critical_eps[neg_idx]
         
 
