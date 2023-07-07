@@ -19,7 +19,7 @@ setup_pyplot_font(20)
 # ## Load Data
 # %%
 
-X, y, features, task, ohe, _ = setup_data_trees("adult_income")
+X, y, features, task, ohe, I_map = setup_data_trees("adult_income")
 X_train, X_test, y_train, y_test = custom_train_test_split(X, y, task)
 N = X_test.shape[0]
 
@@ -132,16 +132,11 @@ plt.show()
 # %%[markdown]
 ## Local Feature Attributions
 # %%
-# Sign of the gap
-ratio_defined_gaps = np.mean(selected_rashomon_po.gap_crit_eps >= epsilon)
-print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the data")
-
-# %%
-# Explore instances will high/low predictions
-preds, minmax_preds = selected_rashomon.predict(ohe.transform(X_test[:2000]), epsilon)
+# Explore instances will high/low test predictions
+test_preds, minmax_preds = selected_rashomon.predict(ohe.transform(X_test[:2000]), epsilon)
 idx_no_capital = (X_test[:2000, 2]==0) & (X_test[:2000, 3]==0)
-conf_pos = np.where(idx_no_capital & (preds[:2000]>0.75))[0]
-conf_neg = np.where(idx_no_capital & (preds[:2000]<0.3) & (preds[:2000]>0.1))[0]
+conf_pos = np.where(idx_no_capital & (test_preds>0.75))[0]
+conf_neg = np.where(idx_no_capital & (test_preds<0.3) & (test_preds>0.1))[0]
 
 idxs = [conf_pos[0],
         conf_pos[1],
@@ -172,7 +167,7 @@ for i, idx in enumerate(idxs):
 
     # Predictions
     print(f"True Outcome {y_test[idx, 0]:.3f}")
-    print(f"Point Prediction {preds[idx]:.3f}")
+    print(f"Point Prediction {test_preds[idx]:.3f}")
     # Show min-max preds for RF
     print(f"Min-Max Preds {minmax_preds[idx, 0]:.3f}, {minmax_preds[idx, 1]:.3f}")
 
@@ -212,4 +207,55 @@ plt.savefig(os.path.join('Images', 'Adult-Income', "PO", f"Global.pdf"), bbox_in
 plt.show()
 
 PO.print_hasse_diagram(show_ambiguous=False)
+
+# %%[markdown]
+## Ill-defined Gaps
 # %%
+# Sign of the gap
+defined_gaps = selected_rashomon_po.gap_crit_eps >= epsilon
+ratio_defined_gaps = np.mean(defined_gaps)
+print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the data")
+
+# %% Investigate which instances do not have a well-defined gap
+
+# Get predictions across background and foreground
+background_preds, _ = selected_rashomon.predict(ohe.transform(X_train[:500]), epsilon)
+
+plt.figure()
+_, _, rects = plt.hist(test_preds[~defined_gaps], bins=15, color='blue', 
+                       alpha=0.3, density=True, label="Ill-defined")
+plt.hist(test_preds[defined_gaps], bins=50, color='red', alpha=0.3, 
+                density=True, label="Well-defined")
+max_height = max([h.get_height() for h in rects])
+plt.plot(background_preds.mean() * np.ones(2), [0, max_height], 'k-')
+plt.text(background_preds.mean(), 1.05*max_height, 
+         r"$\mathbb{E}_{\bm{z}\sim\mathcal{B}}[h_S(\bm{z})]$", 
+         horizontalalignment='center')
+plt.xlim(test_preds.min(), test_preds.max())
+plt.xlabel("Predictions")
+plt.ylabel("Probability Density")
+plt.legend()
+plt.savefig(os.path.join("Images", "Adult-Income", "Gap.pdf"), 
+            bbox_inches='tight')
+plt.show()
+
+# %% Define another background and rerun TreeSHAP
+from uxai.trees import interventional_treeshap
+
+# SHAP feature attribution
+foreground = ohe.transform(X_test[:2000][~defined_gaps])
+background = ohe.transform(X_train[y_train.ravel()==0][:500])
+print(selected_rashomon.model.predict_proba(background)[:, 1].mean())
+
+# %%
+phis_new, _ = interventional_treeshap(selected_rashomon.model, foreground, background, I_map)
+
+# %%
+# Recompute a partial order
+rashomon_po = rf_rashomon.feature_attributions(phis_new, tau=0)
+
+print(rashomon_po.gap_crit_eps.shape)
+defined_gaps_new = rashomon_po.gap_crit_eps >= epsilon
+ratio_defined_gaps = np.mean(defined_gaps_new)
+print(f"Gap is well-defined on {100 * ratio_defined_gaps:.1f} of the foreground")
+
