@@ -336,7 +336,7 @@ class LinearRashomon(BaseEstimator, RegressorMixin):
 
 
 
-    def feature_attributions(self, x_instances, idxs=None, top_bottom=True):
+    def feature_attributions(self, x_instances, background=None, idxs=None, top_bottom=True):
         """ 
         Compute the Local Feature Attributions (LFA) for a set of samples `x_instances`.
         These LFAs are encoded as a `RashomonPartialOrders` object.
@@ -379,6 +379,9 @@ class LinearRashomon(BaseEstimator, RegressorMixin):
 
         # Rescale the instance
         x_instances = (x_instances - self.X_mean) / self.X_std
+        # Work with a specific contrastive question
+        if background is not None:
+            x_instances -= (background.mean(0) - self.X_mean) / self.X_std
         
         ### Range of the Gap across the Rashomon Set ###
         x_instance_tilde = np.vstack( (np.zeros((1, N)), x_instances.T) ) * self.y_std

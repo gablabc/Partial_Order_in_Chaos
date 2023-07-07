@@ -16,7 +16,9 @@ from uxai.plots import bar
 setup_pyplot_font(20)
 save_path = os.path.join('Images', 'Kaggle-Houses')
 
-# %% Load Data and Model
+# %%[markdown]
+## Load Data and Model
+# %%
 
 # remove_correlations = False
 remove_correlations = True
@@ -38,23 +40,25 @@ reorder_feature_names = [features.names[i] for i in simple_feature_idx] +\
 H = model[0].transform(X)
 
 # %% Ensure that we have the correct number of dimensions
+
 assert dim * len(complex_feature_idx) + len(simple_feature_idx) == model[1].n_features
 idxs =[[i] for i in range(len(simple_feature_idx))]
 idxs += [list(range(i, i+dim)) for i in range(len(simple_feature_idx), model[1].n_features, dim)]
 print(idxs)
 assert len(idxs) == len(features)
 
-
-# %% Residual Analysis
+# %%[markdown]
+## Residual Analysis
+# %%
 
 # Residuals
-y_hat = model.predict(X).ravel()
-Delta = y.ravel() - model.predict(X).ravel()
+all_preds = model.predict(X).ravel()
+Delta = y.ravel() - all_preds
 Delta_max = 0.75
 
 # Test of Homogeneity of the Residuals
-y_hat_split = np.array_split(np.sort(y_hat), 3)
-Delta_split = np.array_split(Delta[np.argsort(y_hat)], 3)
+y_hat_split = np.array_split(np.sort(all_preds), 3)
+Delta_split = np.array_split(Delta[np.argsort(all_preds)], 3)
 _, p_val = levene(*Delta_split, center="trimmed")
 print(f"P-value for variance homogeneity {100*p_val:.2f} %")
 
@@ -71,7 +75,7 @@ for i in range(3):
     plt.scatter(y_hat_split[i][::3], Delta_split[i][::3], alpha=0.2, c='b')
 plt.xlabel(r"Prediction $h_S(\bm{x}^{(i)})$")
 plt.ylabel(r'Residual $y^{(i)} - h_S(\bm{x}^{(i)})$')
-plt.xlim(y_hat[::2].min(), y_hat[::2].max())
+plt.xlim(all_preds[::2].min(), all_preds[::2].max())
 plt.ylim(-0.6, 0.6)
 plt.savefig(os.path.join(save_path, 
             f"Homogeneity_remove_corr_{remove_correlations}.pdf"), bbox_inches='tight')
@@ -121,7 +125,9 @@ plt.xlabel('RMSE')
 plt.xlim(0.1, 0.2)
 plt.show()
 
-# %% Explain all models in the Rashomon Set
+# %%[markdown]
+## Local Feature Attributions
+# %%
 
 # Compute LFA on the whole data
 rashomon_po = model[1].feature_attributions(H, idxs=idxs)
@@ -150,11 +156,6 @@ ax.set_ylim(0, 0.5)
 plt.savefig(os.path.join(save_path, 
             f"AR_remove_corr_{remove_correlations}.pdf"), bbox_inches='tight')
 plt.show()
-
-# %% Count number of well-defined gaps
-
-ratio_defined_gaps = np.mean(rashomon_po.gap_crit_eps >= chosen_epsilon)
-print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the data")
 
 # %% Local Feature Attributions of houses with high/low prices
 
@@ -203,8 +204,11 @@ for i in idxs_to_explain:
         print("Gaps is not well-defined")
     print("\n")
 
-# %% Global Feature Importance
+# %%[markdown]
+## Global Feature Importance
+# %%
 
+# Compute the GFI
 min_max_importance, PO = model[1].feature_importance(chosen_epsilon,
                                 feature_names=reorder_feature_names,
                                 idxs=idxs, threshold=0.001, top_bottom=True)
@@ -223,4 +227,45 @@ dot.render(os.path.join(save_path, "PO", filename), format='pdf')
 print("\n")
 
 plt.show()
+# %%[markdown]
+## Ill-defined Gaps
+# %%
+
+defined_gaps = rashomon_po.gap_crit_eps >= chosen_epsilon
+ratio_defined_gaps = np.mean(defined_gaps)
+print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the data")
+
+# %% Investigate which instances do not have a well-defined gap
+
+plt.figure()
+_, _, rects = plt.hist(all_preds[~defined_gaps], bins=50, color='blue', 
+                       alpha=0.3, density=True, label="Ill-defined")
+plt.hist(all_preds[defined_gaps], bins=50, color='red', alpha=0.3, 
+                density=True, label="Well-defined")
+max_height = 0.97* max([h.get_height() for h in rects])
+plt.plot(all_preds.mean() * np.ones(2), [0, max_height], 'k-')
+plt.text(all_preds.mean(), max_height, 
+         r"$\mathbb{E}_{\bm{z}\sim\mathcal{B}}[h_S(\bm{z})]$", 
+         horizontalalignment='left')
+plt.xlim(all_preds.min(), all_preds.max())
+plt.xlabel("Predictions")
+plt.ylabel("Probability Density")
+plt.legend()
+plt.savefig(os.path.join(save_path, 
+            f"Gap_remove_corr_{remove_correlations}.pdf"), bbox_inches='tight')
+plt.show()
+
+# %% Define another background for ill-defined instances
+
+# Compute LFA using cheap houses as the background
+background = H[all_preds < np.quantile(all_preds, 0.25)]
+rashomon_po = model[1].feature_attributions(H[~defined_gaps], 
+                                            background=background,
+                                            idxs=idxs)
+
+defined_gaps_new = rashomon_po.gap_crit_eps >= chosen_epsilon
+ratio_defined_gaps = np.mean(defined_gaps_new)
+print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the foreground")
+
+
 # %%
