@@ -204,10 +204,15 @@ class Ellipsoid(object):
 
     def sample_boundary(self, N, epsilon):
         size = self.size_fun(epsilon)
-        assert size > 0, "The ellipse is empty"
         z = np.random.normal(0, 1, size=(N, self.d))
         z = z / np.linalg.norm(z, axis=1, keepdims=True)
-        w_boundary = z.dot(self.C_inv) * np.sqrt(size) + self.mu.T
+        if type(size) == np.ndarray:
+            assert (size > 0).all(), "The ellipse is empty"
+            size = size.reshape((-1, 1))
+            w_boundary = z.dot(self.C_inv) * np.sqrt(size) + self.mu.T
+        else:
+            assert size > 0, "The ellipse is empty"
+            w_boundary = z.dot(self.C_inv) * np.sqrt(size) + self.mu.T
         return w_boundary
 
 

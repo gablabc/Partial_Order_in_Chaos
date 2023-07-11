@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from IPython import display
 
-from utils import setup_pyplot_font
+from utils import setup_pyplot_font, paired_student
 from data_utils import DATASET_MAPPING
 
 import os, sys
@@ -16,14 +16,16 @@ from uxai.plots import bar
 
 setup_pyplot_font(20)
 
+# %%[markdown]
+# ## Load Data and Model
 # %%
-# Load dataset
+
 X, y, features, names = DATASET_MAPPING["compas"]()
 # Scale numerical features
 scaler = StandardScaler().fit(X[:, features.non_nominal])
 X[:, features.non_nominal] = scaler.transform(X[:, features.non_nominal])
 # Split train/test
-_, X_test, _, y_test = train_test_split(X, y, test_size=0.2, 
+_, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, 
                                             shuffle=True, random_state=0)
 kernel = "rbf"
 # kernel = "poly"
@@ -37,8 +39,9 @@ def get_feature_map(x):
 
 image_path = os.path.join("Images", "COMPAS")
 
+# %%[markdown]
+# ## Model Set Selection
 # %%
-
 # Assess Performance
 print(f"Train loss = {model.MSE:.4f} + {model.lambd} {model.h_norm():.4f} = {model.train_loss:.4f}")
 rel_epsilon = 0.01
@@ -47,9 +50,9 @@ print(f"Upper bound (1 + epsilon') (L(a) + lambda |h_a|^2) : {upper_bound_loss:.
 # Get the absolute epsilon
 abs_epsilon = model.get_epsilon(rel_epsilon)
 
-# # %%
-
-# ## Global Feature Importance ##
+# %%[markdown]
+# ## Global Feature Importance
+# %%
 # min_max_importance, global_PO = model.feature_importance(X_test, y_test.reshape((-1, 1)), 
 #                                     abs_epsilon, feature_names=features.names, idxs=None, threshold=-100)
 
@@ -63,6 +66,9 @@ abs_epsilon = model.get_epsilon(rel_epsilon)
 # dot = global_PO.print_hasse_diagram(show_ambiguous=False)
 # dot.render(filename=os.path.join(image_path, "PO", f"PO_Global_{kernel}"), format='pdf')
 
+# %%[markdown]
+# ## Local Feature Attribution
+# %%
 # %%
 def local_feature_attribution(name_x, name_z):
     # Query the instances
@@ -120,8 +126,8 @@ def local_feature_attribution(name_x, name_z):
     # Bar plot
     bar(PO.phi_mean, [z_map, x_map], xerr=widths.T)
     plt.savefig(os.path.join(image_path, "PO", f"Attrib_{short_name}_{kernel}.pdf"), bbox_inches='tight')
-
     plt.show()
+
     # Hasse diagram
     if PO is not None:
         dot = PO.print_hasse_diagram(show_ambiguous=False)
@@ -129,8 +135,24 @@ def local_feature_attribution(name_x, name_z):
         dot.render(filename=os.path.join(image_path, "PO", f"PO_{short_name}_{kernel}"), format='pdf')
     else:
         print("No defined gap")
-    return rashomon_po
 
+
+    # Is the model that gives the smallest attribution to Race
+    # significantly worst than h_S?
+    IG = model.IG
+    # Min-Max
+    a = IG[:, 1, :].T # (R, N)
+    _, argminmax = model.ellipsoid.opt_linear(a, abs_epsilon, return_input_sol=True)
+    alpha_alternative = argminmax[0].T
+    
+    # Get all train errors to compute a Student-t test
+    K = model.get_kernel(X_test, model.Dict)
+    errors_baseline = (y_test.reshape((-1, 1)) - K.dot(model.alpha_s) - model.mu) ** 2
+    errors_alternative = (y_test.reshape((-1, 1)) - K.dot(alpha_alternative) - model.mu) ** 2
+    significantly_worst = paired_student(errors_baseline.ravel(), errors_alternative.ravel())
+    print(f"Is the alternative model significantly worst?  {significantly_worst}")
+    
+    return rashomon_po
 
 # %%
 # # Dylan Fugget vs Bernard Parker

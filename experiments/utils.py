@@ -14,6 +14,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
 from sklearn.tree import DecisionTreeRegressor
 from joblib import load
+from scipy.stats import t
 
 # Local imports
 from data_utils import DATASET_MAPPING, TASK_MAPPING
@@ -77,6 +78,38 @@ def load_spline_model(remove_correlations):
     n_knots = model.get_params()["encoder__spline__n_knots"]
 
     return model, simple_feature_idx, complex_feature_idx, degree, n_knots
+
+
+
+################################ Kernel Ridge ##################################
+
+
+def MSS(individual_errors, losses, significance=0.05):
+    """
+    Return the minimum empirical performance that guarantees 
+    capturing h* when the hypothesis space is finite and
+    we can compute all predictions efficiently.
+    """
+    N = individual_errors.shape[1]
+    sorted_idx = np.argsort(losses)
+    individual_errors = individual_errors[sorted_idx]
+    losses = losses[sorted_idx]
+    factor = t(df=N-1).ppf(1-significance) / np.sqrt(N)
+    Delta = individual_errors[:, np.newaxis, :] - individual_errors[np.newaxis, ...] #(M, M, N)
+    reject_H0 = (Delta.mean(-1) > factor * Delta.std(-1)).any(axis=1)
+    epsilon = losses[~reject_H0]
+    return epsilon
+
+
+def paired_student(errors_1, errors_2, significance=0.05):
+    """
+    Is model 2 significantly worst than model ?
+    """
+    N = len(errors_1)
+    factor = t(df=N-1).ppf(1-significance) / np.sqrt(N)
+    Delta = errors_2 - errors_1
+    is_significantly_worst = Delta.mean() > factor * Delta.std()
+    return is_significantly_worst
 
 
 ################################ Tree Models ##################################
