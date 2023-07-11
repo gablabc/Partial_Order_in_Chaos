@@ -330,7 +330,10 @@ class RandomForestRashomon(object):
         
 
         if epsilon is None:
-            return self.model.predict(X)
+            if self.task == "regression":
+                return self.model.predict(X)
+            else:
+                return self.model.predict_proba(X)[:, 1]
         tree_preds = get_all_tree_preds(X, self.model, self.task)
         mean_pred = tree_preds.mean(1)
         m_epsilon = self.get_m_epsilon(epsilon)

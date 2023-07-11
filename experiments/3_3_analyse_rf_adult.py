@@ -21,6 +21,8 @@ setup_pyplot_font(20)
 
 X, y, features, task, ohe, I_map = setup_data_trees("adult_income")
 X_train, X_test, y_train, y_test = custom_train_test_split(X, y, task)
+X_train_ohe = ohe.transform(X_train)
+X_test_ohe = ohe.transform(X_test)
 N = X_test.shape[0]
 
 # %%[markdown]
@@ -52,10 +54,10 @@ rf_rashomon_sets = []
 
 # Check all seeds to see if methodology is stable
 plt.figure()
-for seed in tqdm(range(5)):
+for seed in tqdm(range(1)):
     model = load(os.path.join("models", "Adult-Income", f"RF_M_1000_seed_{seed}.joblib"))
     rf_rashomon = RandomForestRashomon(model, task="classification")
-    rf_rashomon.fit(ohe.transform(X_test), y_test.ravel())
+    rf_rashomon.fit(X_test_ohe, y_test.ravel())
 
     if seed == 0:
         epsilon = rf_rashomon.epsilon_upper[-1]+extra_tolerance
@@ -75,7 +77,7 @@ plt.ylabel("Misclassification Rate")
 plt.xlim(500, 1000)
 plt.ylim(0.135, 0.23)
 plt.legend()
-plt.savefig(os.path.join("Images", "Adult-Income", f"RF_error_bound.pdf"), bbox_inches='tight', pad_inches=0)
+# plt.savefig(os.path.join("Images", "Adult-Income", f"RF_error_bound.pdf"), bbox_inches='tight', pad_inches=0)
 plt.show()
 
 # %%[markdown]
@@ -85,7 +87,7 @@ plt.figure()
 selected_rashomon = None
 selected_rashomon_po = None
 selected_phis = None
-for seed in tqdm(range(5)):
+for seed in tqdm(range(1)):
     # Get the rashomon set
     rf_rashomon = rf_rashomon_sets[seed]
 
@@ -112,7 +114,7 @@ plt.xlim(0.135, 0.35)
 plt.ylim(0, 1)
 plt.xlabel("Missclassification Tolerance")
 plt.ylabel("Mean Cardinality")
-plt.savefig(os.path.join("Images", "Adult-Income", f"RF_cardinality.pdf"), bbox_inches='tight', pad_inches=0)
+# plt.savefig(os.path.join("Images", "Adult-Income", f"RF_cardinality.pdf"), bbox_inches='tight', pad_inches=0)
 plt.show()
 
 # %% Clear all un-used rashomon sets
@@ -133,7 +135,7 @@ plt.show()
 ## Local Feature Attributions
 # %%
 # Explore instances will high/low test predictions
-test_preds, minmax_preds = selected_rashomon.predict(ohe.transform(X_test[:2000]), epsilon)
+test_preds, minmax_preds = selected_rashomon.predict(X_test_ohe[:2000], epsilon)
 idx_no_capital = (X_test[:2000, 2]==0) & (X_test[:2000, 3]==0)
 conf_pos = np.where(idx_no_capital & (test_preds>0.75))[0]
 conf_neg = np.where(idx_no_capital & (test_preds<0.3) & (test_preds>0.1))[0]
@@ -219,7 +221,8 @@ print(f"Gap is well-defined on {100* ratio_defined_gaps:.1f} of the data")
 # %% Investigate which instances do not have a well-defined gap
 
 # Get predictions across background and foreground
-background_preds, _ = selected_rashomon.predict(ohe.transform(X_train[:500]), epsilon)
+background_preds, _ = selected_rashomon.predict(X_train_ohe[:500], 
+                                                epsilon)
 
 plt.figure()
 _, _, rects = plt.hist(test_preds[~defined_gaps], bins=15, color='blue', 
@@ -229,7 +232,7 @@ plt.hist(test_preds[defined_gaps], bins=50, color='red', alpha=0.3,
 max_height = max([h.get_height() for h in rects])
 plt.plot(background_preds.mean() * np.ones(2), [0, max_height], 'k-')
 plt.text(background_preds.mean(), 1.05*max_height, 
-         r"$\mathbb{E}_{\bm{z}\sim\mathcal{B}}[h_S(\bm{z})]$", 
+         r"$\mathbb{E}_{\bm{z}\sim\mathcal{B}}[h_{ref}(\bm{z})]$", 
          horizontalalignment='center')
 plt.xlim(test_preds.min(), test_preds.max())
 plt.xlabel("Predictions")
@@ -243,9 +246,11 @@ plt.show()
 from uxai.trees import interventional_treeshap
 
 # SHAP feature attribution
-foreground = ohe.transform(X_test[:2000][~defined_gaps])
-background = ohe.transform(X_train[y_train.ravel()==0][:500])
-print(selected_rashomon.model.predict_proba(background)[:, 1].mean())
+foreground = X_test_ohe[:2000][~defined_gaps]
+positive_outcome = np.where(selected_rashomon.predict(
+                            X_train_ohe) > 0.5)[0][:500]
+background = X_train_ohe[positive_outcome]
+print(selected_rashomon.predict(background).mean())
 
 # %%
 phis_new, _ = interventional_treeshap(selected_rashomon.model, foreground, background, I_map)
@@ -259,3 +264,5 @@ defined_gaps_new = rashomon_po.gap_crit_eps >= epsilon
 ratio_defined_gaps = np.mean(defined_gaps_new)
 print(f"Gap is well-defined on {100 * ratio_defined_gaps:.1f} of the foreground")
 
+
+# %%
