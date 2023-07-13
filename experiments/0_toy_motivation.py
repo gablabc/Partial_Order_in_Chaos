@@ -5,14 +5,14 @@ We fit 5 MLPs with ReLU activations on a simple
 """
 # %%
 import matplotlib.pyplot as plt
-from matplotlib import rc
-rc('font',**{'family':'serif', 'serif':['Computer Modern Roman'], 'size':15})
 
 import torch
 import numpy as np
 import pandas as pd
 import random
 from simple_parsing import ArgumentParser
+from utils import setup_pyplot_font
+setup_pyplot_font(15)
 
 import os, sys
 sys.path.append(os.path.join(".."))
@@ -117,15 +117,36 @@ MyMethod.apply(models, train_loader_s)
 models.preprocess  = scaler_x.to(models.hparams.device)
 models.postprocess = scaler_y.to(models.hparams.device)
 
+# %%
 # Test results
 models.aggregate(False)
-perfs = evaluate_ensemble(models, [train_loader, test_loader])
+perfs, all_preds = evaluate_ensemble(models, [train_loader, test_loader],
+                                     return_predictions=True)
 perf_df = pd.DataFrame(perfs.numpy(), columns=["Train", "Test"],
         index=[f"h_{i}" for i in range(models.hparams.size_ensemble)] + ['h_mean'])
 print(perf_df)
 
 # Target stddev as a reference
 print(f"Target standard deviation : {y.std():.4f}")
+
+# %%
+# Paired Student-t tests to generate the "Set of Good Models"
+from utils import MSS
+
+all_test_errors = (y_test.ravel() - all_preds[1].squeeze(-1)) ** 2
+epsilon = MSS(all_test_errors.numpy(), perfs[:-1, 1].numpy())
+print(f"Keeping all models with a test error bellow {epsilon:.3f}")
+select_models = np.where(perfs[:-1, 1] <= epsilon)[0]
+models.model_set_selection(select_models)
+
+# %%
+# Rerun the train-test performance
+perfs, all_preds = evaluate_ensemble(models, [train_loader, test_loader],
+                                     return_predictions=True)
+perf_df = pd.DataFrame(perfs.numpy(), columns=["Train", "Test"],
+        index=[f"h_{i}" for i in range(models.hparams.size_ensemble)] + ['h_mean'])
+print(perf_df)
+
 
 # %%
 import math
@@ -178,7 +199,7 @@ ordered_test_perf = np.concatenate([perfs[model_idxs, 1], perfs[-1:, 1]])
 pcp(phis[model_idxs, :], latex_feature_map, test_error=ordered_test_perf)
 
 plt.ylim(0, 3)
-# plt.savefig(os.path.join("Images", "Motivation", f"attrib_{seed}.pdf"), bbox_inches='tight')
+plt.savefig(os.path.join("Images", "Motivation", f"attrib_{seed}.pdf"), bbox_inches='tight')
 plt.show()
 
 # %%
@@ -220,3 +241,5 @@ filename = os.path.join("Images", "Motivation", f"partial_{args.seed}")
 dot.render(filename, format='pdf')
 dot.render(filename, format='png')
 dot
+
+# %%

@@ -93,11 +93,11 @@ def MSS(individual_errors, losses, significance=0.05):
     N = individual_errors.shape[1]
     sorted_idx = np.argsort(losses)
     individual_errors = individual_errors[sorted_idx]
-    losses = losses[sorted_idx]
+    losses = losses[sorted_idx][1:]
     factor = t(df=N-1).ppf(1-significance) / np.sqrt(N)
-    Delta = individual_errors[:, np.newaxis, :] - individual_errors[np.newaxis, ...] #(M, M, N)
-    reject_H0 = (Delta.mean(-1) > factor * Delta.std(-1)).any(axis=1)
-    epsilon = losses[~reject_H0]
+    Delta = individual_errors[1:] - individual_errors[0] # (M-1, N)
+    reject_H0 = Delta.mean(1) > factor * Delta.std(1)
+    epsilon = losses[~reject_H0].max()
     return epsilon
 
 

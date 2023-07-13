@@ -189,6 +189,10 @@ class Ensemble(nn.Module):
 
         self.all_params = nn.Parameter(parameters.to(self.device))
 
+    def model_set_selection(self, select_models):
+        self.hparams.size_ensemble = len(select_models)
+        self.all_params = nn.Parameter(self.all_params[select_models])
+    
     @property
     def name(self):
         return 'Ensemble'
