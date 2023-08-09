@@ -218,7 +218,7 @@ class LinearRashomon(BaseEstimator, RegressorMixin):
                 # For features with one component
                 if len(grouped_idx) == 1:
                     # The importance is the norm of the weights
-                    min_max_importance[i] = abs_interval(uni_min_max_importance[i])
+                    min_max_importance[i] = abs_interval(uni_min_max_importance[grouped_idx[0]])
                 # For features with two or more component
                 else:
                     grouped_idx = np.array(grouped_idx)+1
@@ -333,6 +333,36 @@ class LinearRashomon(BaseEstimator, RegressorMixin):
         po = PartialOrder(w_hat_importance, adjacency, ambiguous=ambiguous, 
                             features_names=feature_names, top_bottom=top_bottom)
         return min_max_importance, po
+
+
+
+    def sample_feature_attributions(self, x_instances, epsilon, background=None, 
+                                                        idxs=None, n_samples=1000):
+        N = x_instances.shape[0]
+
+        # Sample from the Rashomon set boundary just in case
+        w_boundary = self.ellipsoid.sample_boundary(n_samples, epsilon)
+        # Rescale the instance
+        x_instances = (x_instances - self.X_mean) / self.X_std
+        # Work with a specific contrastive question
+        if background is not None:
+            x_instances -= (background.mean(0) - self.X_mean) / self.X_std
+
+        # Features to which to attribute a change in model output
+        if idxs is None:
+            idxs = [[i] for i in range(self.n_features)]
+        d = len(idxs)
+
+        ### Range of the Attributions across the Rashomon Set ###
+        lstsq_attrib = np.zeros((N, d))
+        all_attribs = np.zeros((N, d, n_samples))
+        for j in range(d):
+            idxs_j = np.array(idxs[j])
+            # Least-Square
+            lstsq_attrib[:, j] = np.sum(x_instances[:, idxs_j] * self.w_hat[idxs_j+1].T, axis=1)
+            # Boundary
+            all_attribs[:, j, :] = x_instances[:, idxs_j].dot(w_boundary[:, idxs_j+1].T)
+        return self.y_std * lstsq_attrib, self.y_std * all_attribs
 
 
 

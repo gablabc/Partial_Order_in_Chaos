@@ -14,7 +14,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
 from sklearn.tree import DecisionTreeRegressor
 from joblib import load
-from scipy.stats import t
+from scipy.stats import t, spearmanr
+from scipy.cluster.hierarchy import linkage, fcluster
 
 # Local imports
 from data_utils import DATASET_MAPPING, TASK_MAPPING
@@ -80,6 +81,41 @@ def load_spline_model(remove_correlations):
     return model, simple_feature_idx, complex_feature_idx, degree, n_knots
 
 
+def lcs(S, T):
+    """ Longest common substring"""
+    m = len(S)
+    n = len(T)
+    counter = [[0]*(n+1) for _ in range(m+1)]
+    longest = 0
+    lcs_set = set()
+    for i in range(m):
+        for j in range(n):
+            if S[i] == T[j]:
+                c = counter[i][j] + 1
+                counter[i+1][j+1] = c
+                if c > longest:
+                    lcs_set = set()
+                    longest = c
+                    lcs_set.add(S[i-c+1:i+1])
+                elif c == longest:
+                    lcs_set.add(S[i-c+1:i+1])
+
+    return lcs_set
+
+
+
+def get_grouped_features(X, feature_names):
+    correl, _ = spearmanr(X)
+    Z = linkage(1-correl[np.triu_indices(X.shape[1], k=1)], 'single')
+    cluster_idx = fcluster(Z, t=0.37, criterion="distance")
+    grouped_features = {}
+    for i in np.unique(cluster_idx):
+        repeated = np.where(cluster_idx == i)[0]
+        if len(repeated) == 2:
+            LCS = lcs(feature_names[repeated[0]],
+                      feature_names[repeated[1]]).pop()
+            grouped_features[LCS]=repeated
+    return grouped_features
 
 ################################ Kernel Ridge ##################################
 

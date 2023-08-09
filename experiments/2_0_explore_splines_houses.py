@@ -1,8 +1,9 @@
 """ Visualize the Splines """
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
-import os
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.stats import spearmanr
 from sklearn.preprocessing import SplineTransformer, FunctionTransformer
 from sklearn.compose import ColumnTransformer
@@ -41,12 +42,12 @@ def plot_spline_basis(X, y, encoder, dim, degree, simple_feature_idx, complex_fe
         idx_start = dim * i + n_simple
         plt.figure()
         plt.plot(lines[:, complex_feature_idx[i]], H[:, idx_start:idx_start+dim], linewidth=4)
-        plt.scatter(X[:, complex_feature_idx[i]], y / y.max(), alpha=0.3)
+        plt.scatter(X[:, complex_feature_idx[i]], (y-y.min())/(y.max()-y.min()), alpha=0.3)
         plt.xlabel(features.names[complex_feature_idx[i]])
         plt.ylabel("Spline Basis")
         knots = encoder.transformers_[1][1].bsplines_[i].t
-        plt.vlines(knots[degree:-degree], ymin=0, ymax=1.1, linestyles="dashed", color="k")
-        plt.ylim(0,1.1)
+        plt.vlines(knots[degree:-degree], ymin=0, ymax=1.05, linestyles="dashed", color="k")
+        plt.ylim(0, 1.05)
         plt.savefig(os.path.join("Images", "Kaggle-Houses", f"spline_basis_{i}.pdf"), bbox_inches='tight')
 
 
@@ -54,12 +55,30 @@ def plot_spline_basis(X, y, encoder, dim, degree, simple_feature_idx, complex_fe
 if __name__ == "__main__":
 
     setup_pyplot_font(20)
-
+    
     # Get data
-    X, y, features = DATASET_MAPPING["kaggle_houses"]()
-    # correl, _ = spearmanr(X)
-    # np.savetxt(os.path.join("datasets", "kaggle_houses", "houses_correl.csv"), correl, delimiter=",")
+    X, y, features, _ = DATASET_MAPPING["kaggle_houses"]()
+    d = X.shape[1]
+    correl, _ = spearmanr(X)
+    np.savetxt(os.path.join("datasets", "kaggle_houses", "houses_correl_total.csv"), correl, delimiter=",")
 
+    # Hiearchical clustering of features based on correlation
+    # High positive correlation -> small distance
+    Z = linkage(1-correl[np.triu_indices(d, k=1)], 'single')
+    fig = plt.figure(figsize=(25, 10))
+    dn = dendrogram(Z, orientation='right', labels=features.names, 
+                    above_threshold_color='k', color_threshold=0.37,
+                    leaf_font_size=20)
+    plt.plot(0.37*np.ones(2), [0, 200], 'k--')
+    plt.xlabel("1-Spearman")
+    plt.savefig(os.path.join("Images", "Kaggle-Houses", f"Dendrogram.pdf"), bbox_inches='tight')
+    cluster_idx = fcluster(Z, t=0.37, criterion="distance")
+    print(f"{len(np.unique(cluster_idx))} clusters found")
+    for i in range(d):
+        print(f"{features.names[i]} Cluster {cluster_idx[i]}")
+    print("\n")
+
+    # Scatter plots of points and splines
     all_scatter_plots(X, y, features)
     complex_feature_idx, simple_feature_idx = get_complex_features(X, y, 5, features)
     n_knots = 4
