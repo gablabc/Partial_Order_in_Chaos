@@ -374,55 +374,73 @@ class RandomForestRashomon(object):
                           attrib_max_idx].mean(-1)
 
         assert (attrib_min <= attrib_max).all()
-        # Create a collection of models with extreme attribs
-        collection_idx = np.vstack((attrib_min_idx.reshape((N*d, -1)),
-                                    attrib_max_idx.reshape((N*d, -1))))
-        collection_idx = np.unique(np.sort(collection_idx, axis=1), axis=0)
-        if collection_idx.shape[0] > 1000:
-            collection_idx = collection_idx[np.random.choice(range(len(collection_idx)), 1000, replace=False)]
+
+        # # Create a collection of models with extreme local attribs
+        # collection_idx = np.vstack((attrib_min_idx.reshape((N*d, -1)),
+        #                             attrib_max_idx.reshape((N*d, -1))))
+        # collection_idx = np.unique(np.sort(collection_idx, axis=1), axis=0)
+        # if collection_idx.shape[0] > 1000:
+        #     collection_idx = collection_idx[np.random.choice(range(len(collection_idx)), 1000, replace=False)]
         
-        # Compute all LFA on all models in the collection (N_collect, d)
-        GFI_collect = np.zeros((len(collection_idx), d))
-        for i, idxs in tqdm(enumerate(collection_idx), desc="Optimizing LFA"):
-            GFI_collect[i] = np.mean(np.abs(phis[..., idxs].mean(-1)), 0)
+        # # Compute all LFA on all models in the collection (N_collect, d)
+        # GFI_collect = np.zeros((len(collection_idx), d))
+        # for i, idxs in tqdm(enumerate(collection_idx), desc="Optimizing LFA"):
+        #     GFI_collect[i] = np.mean(np.abs(phis[..., idxs].mean(-1)), 0)
         
+
         # Expand the collection of models by approx-optimizing the GFIs
-        if expand:
-            GFI_to_add = []
-            min_max_GFI = np.zeros((d, 2))
-            for i in tqdm(range(d), desc="Optimizing GFI"):
+        GFI_to_add = []
+        min_max_GFI = np.zeros((d, 2))
+        for i in tqdm(range(d), desc="Optimizing GFI"):
 
-                ### Linear Problem (LP) to minimize importance ###
-                _, z_sol = solve_lp(phis[:, i, :], m_epsilon)
-                min_trees_idxs = np.where(z_sol==1)[0]
-                k = m_epsilon - len(min_trees_idxs)
-                # print(f"Choosing {k} trees out of fractional values")
-                if k > 0:
-                    # There are fractionary solutions so we heuristically choose the 
-                    # remaining trees in descending order of z
-                    fraction_tree = np.where((z_sol > 0) & (z_sol < 1))[0]
-                    # print(f"{100*(1-len(fraction_tree)/np.sum(z_sol > 0)):.2f}% of non-null z_s are one")
-                    to_add = fraction_tree[np.argpartition(-z_sol[fraction_tree], kth=k)[:k]]
-                    min_trees_idxs = np.concatenate((min_trees_idxs, to_add))
-                # Add argmin to collection
-                GFI_to_add.append(np.mean(np.abs(phis[..., min_trees_idxs].mean(-1)), 0))
+            ### Linear Problem (LP) to minimize importance ###
+            _, z_sol = solve_lp(phis[:, i, :], m_epsilon)
+            min_trees_idxs = np.where(z_sol==1)[0]
+            k = m_epsilon - len(min_trees_idxs)
+            # print(f"Choosing {k} trees out of fractional values")
+            if k > 0:
+                # There are fractionary solutions so we heuristically choose the 
+                # remaining trees in descending order of z
+                fraction_tree = np.where((z_sol > 0) & (z_sol < 1))[0]
+                # print(f"{100*(1-len(fraction_tree)/np.sum(z_sol > 0)):.2f}% of non-null z_s are one")
+                to_add = fraction_tree[np.argpartition(-z_sol[fraction_tree], kth=k)[:k]]
+                min_trees_idxs = np.concatenate((min_trees_idxs, to_add))
+            # Add argmin to collection
+            GFI_to_add.append(np.mean(np.abs(phis[..., min_trees_idxs].mean(-1)), 0))
 
-                ### Bilinear Problem (BP) to maximize importance ###
-                # To fix an initial solution, we look at all trees that appear in the most
-                # extreme attributions min/max phi_i(h, x^(j)). Then we sample with higher 
-                # probability the trees which appeared most often
-                pos_greater_neg = np.where(np.abs(attrib_max[:, i]) > np.abs(attrib_min[:, i]))[0]
-                candidates = attrib_min_idx[:, i, :]
-                candidates[pos_greater_neg] = attrib_max_idx[pos_greater_neg, i, :]
-                candidates, counts = np.unique(candidates.ravel(), return_counts=True)
-                for _ in range(5):
-                    z_0 = np.random.choice(candidates, m_epsilon, p=counts/counts.sum(), replace=False)
-                    # BP Solver
-                    _, max_trees_idxs = solve_bilinear(phis[:, i, :], z_0)
-                    # Add argmax to collection
-                    GFI_to_add.append(np.mean(np.abs(phis[..., max_trees_idxs].mean(-1)), 0))
+            ### Bilinear Problem (BP) to maximize importance ###
+            # To fix an initial solution, we look at all trees that appear in the most
+            # extreme attributions min/max phi_i(h, x^(j)). Then we sample with higher 
+            # probability the trees which appeared most often
+            pos_greater_neg = np.where(np.abs(attrib_max[:, i]) > np.abs(attrib_min[:, i]))[0]
+            candidates = attrib_min_idx[:, i, :]
+            candidates[pos_greater_neg] = attrib_max_idx[pos_greater_neg, i, :]
+            candidates, counts = np.unique(candidates.ravel(), return_counts=True)
+            for _ in range(5):
+                z_0 = np.random.choice(candidates, m_epsilon, p=counts/counts.sum(), replace=False)
+                # BP Solver
+                _, max_trees_idxs = solve_bilinear(phis[:, i, :], z_0)
+                # Add argmax to collection
+                GFI_to_add.append(np.mean(np.abs(phis[..., max_trees_idxs].mean(-1)), 0))
 
-            GFI_collect = np.vstack(GFI_to_add + [GFI_collect])
+
+            # When solving for relative importance, we simply restrict ourselves to data
+            # instances whose attribution has consistent sign for both i and j
+            for j in range(d):
+                if i < j:
+                    consistent_sign_i = np.sign(attrib_min[:, i]) == np.sign(attrib_max[:, i])
+                    consistent_sign_j = np.sign(attrib_min[:, j]) == np.sign(attrib_max[:, j])
+                    consistent_sign_ij = consistent_sign_i & consistent_sign_j
+                    s_i = np.sign(attrib_min[consistent_sign_ij, i])[:, np.newaxis]
+                    s_j = np.sign(attrib_min[consistent_sign_ij, j])[:, np.newaxis]
+                    relative_imp = np.mean(s_i * phis[consistent_sign_ij, i] -\
+                                           s_j * phis[consistent_sign_ij, j], axis=0) # (n_trees,)
+                    relative_imp_min_idx = np.argpartition( relative_imp, kth=m_epsilon)[:m_epsilon]
+                    relative_imp_max_idx = np.argpartition(-relative_imp, kth=m_epsilon)[:m_epsilon]
+                    GFI_to_add.append(np.mean(np.abs(phis[..., relative_imp_min_idx].mean(-1)), 0))
+                    GFI_to_add.append(np.mean(np.abs(phis[..., relative_imp_max_idx].mean(-1)), 0))
+
+        GFI_collect = np.vstack(GFI_to_add)
         
         min_max_GFI = np.zeros((d, 2))
         min_max_GFI[:, 0] = GFI_collect.min(0)
